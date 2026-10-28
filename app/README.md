@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Mellora
 
 An online-banking interface built with React, JavaScript, Vite, and Supabase. It includes a splash screen, marketing site, email/password and magic-link authentication, a member dashboard with live local time and notifications, admin-managed deposit instructions, step-by-step transfer requests with sequential code-fee verification, an admin workspace with balance and messaging controls, row-level security, and animated processing states.
@@ -202,3 +203,6 @@ Run `supabase/schema.sql` **before** creating users. The `handle_new_user` trigg
 ## Security reminder
 
 Never share screenshots containing passwords, service-role keys, access tokens, or SMTP credentials. If a password has appeared in a screenshot, change it before continuing.
+=======
+# mellora
+>>>>>>> 6a5573ddebb1c205f4f5d43aea6c896624eb0084

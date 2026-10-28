@@ -1,0 +1,25 @@
+version: v2
+title: Mellora Digital Banking Logo
+size: [1080, 1080]
+customFonts:
+  - family: Sora
+    src: "https://fonts.googleapis.com/css2?family=Sora"
+  - family: DM Sans
+    src: "https://fonts.googleapis.com/css2?family=DM+Sans"
+theme:
+  colors:
+    butter: "#FFEFB3"
+    green: "#013E37"
+  textStyles:
+    label:
+      fontSize: 16
+      fontFamily: DM Sans
+      letterSpacing: 2
+    tagline:
+      fontSize: 23
+      fontFamily: DM Sans
+      letterSpacing: 0.8
+pages:
+  - pages/1_primary.page
+  - pages/2_reversed.page
+  - pages/3_app_icon.page

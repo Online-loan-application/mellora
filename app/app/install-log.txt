@@ -1,0 +1,29 @@
+npm warn cleanup Failed to remove some directories [
+npm warn cleanup   [
+npm warn cleanup     'C:\\Users\\USER\\OneDrive\\Desktop\\All online banking\\mellow bank\\app\\node_modules\\input-otp',
+npm warn cleanup     [Error: EPERM: operation not permitted, rmdir 'C:\Users\USER\OneDrive\Desktop\All online banking\mellow bank\app\node_modules\input-otp\dist'] {
+npm warn cleanup       errno: -4048,
+npm warn cleanup       code: 'EPERM',
+npm warn cleanup       syscall: 'rmdir',
+npm warn cleanup       path: 'C:\\Users\\USER\\OneDrive\\Desktop\\All online banking\\mellow bank\\app\\node_modules\\input-otp\\dist'
+npm warn cleanup     }
+npm warn cleanup   ],
+npm warn cleanup   [
+npm warn cleanup     '\\\\?\\C:\\Users\\USER\\OneDrive\\Desktop\\All online banking\\mellow bank\\app\\node_modules\\tailwindcss',
+npm warn cleanup     [Error: EPERM: operation not permitted, rmdir 'C:\Users\USER\OneDrive\Desktop\All online banking\mellow bank\app\node_modules\tailwindcss\src\lib'] {
+npm warn cleanup       errno: -4048,
+npm warn cleanup       code: 'EPERM',
+npm warn cleanup       syscall: 'rmdir',
+npm warn cleanup       path: 'C:\\Users\\USER\\OneDrive\\Desktop\\All online banking\\mellow bank\\app\\node_modules\\tailwindcss\\src\\lib'
+npm warn cleanup     }
+npm warn cleanup   ]
+npm warn cleanup ]
+npm error code ENOTFOUND
+npm error syscall getaddrinfo
+npm error errno ENOTFOUND
+npm error network request to https://npm.mirrors.msh.team/@supabase/supabase-js/-/supabase-js-2.109.0.tgz failed, reason: getaddrinfo ENOTFOUND npm.mirrors.msh.team
+npm error network This is a problem related to network connectivity.
+npm error network In most cases you are behind a proxy or have bad network settings.
+npm error network
+npm error network If you are behind a proxy, please make sure that the 'proxy' config is set properly.  See: 'npm help config'
+npm error A complete log of this run can be found in: C:\Users\USER\AppData\Local\npm-cache\_logs\2026-10-26T17_37_11_634Z-debug-0.log

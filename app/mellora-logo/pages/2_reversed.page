@@ -1,0 +1,67 @@
+pageType: content
+background: {type: solid, color: "$green"}
+elements:
+  - elementId: brand-label
+    elementType: text
+    bounds: [64, 54, 400, 30]
+    content:
+      style: "$label"
+      color: "$butter"
+      bold: true
+      wrap: false
+      align: [left, middle]
+      text: MELLORA / DIGITAL BANKING
+  - elementId: page-label
+    elementType: text
+    bounds: [696, 54, 320, 30]
+    content:
+      style: "$label"
+      color: "$butter"
+      wrap: false
+      align: [right, middle]
+      text: 02 — REVERSED LOGO
+  - elementId: icon-bg
+    elementType: shape
+    bounds: [425, 248, 230, 230]
+    shapeName: roundRect
+    adjustments: [26000]
+    fill: {type: solid, color: "$butter"}
+  - elementId: icon-m
+    elementType: shape
+    bounds: [469, 297, 142, 134]
+    shapeName: custom
+    viewBox: [240, 240]
+    path: "M34,206 L34,63 Q34,34 63,34 Q79,34 92,48 L120,79 L148,48 Q161,34 177,34 Q206,34 206,63 L206,206 L163,206 L163,117 L137,145 Q120,162 103,145 L77,117 L77,206 Z"
+    fill: {type: solid, color: "$green"}
+  - elementId: wordmark
+    elementType: text
+    bounds: [240, 526, 600, 142]
+    content:
+      fontFamily: Sora
+      fontSize: 104
+      bold: true
+      color: "$butter"
+      letterSpacing: -5
+      wrap: false
+      align: [center, middle]
+      text: mellora
+  - elementId: tagline
+    elementType: text
+    bounds: [290, 694, 500, 40]
+    content:
+      style: "$tagline"
+      color: "$butter"
+      wrap: false
+      align: [center, middle]
+      text: Money, made mellow.
+  - elementId: descriptor
+    elementType: text
+    bounds: [240, 916, 600, 38]
+    content:
+      fontFamily: DM Sans
+      fontSize: 16
+      color: "$butter"
+      letterSpacing: 3
+      wrap: false
+      align: [center, middle]
+      text: SIMPLE  •  SECURE  •  HUMAN
