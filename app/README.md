@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Mellora
 
 An online-banking interface built with React, JavaScript, Vite, and Supabase. It includes a splash screen, marketing site, email/password and magic-link authentication, a member dashboard with live local time and notifications, admin-managed deposit instructions, step-by-step transfer requests with sequential code-fee verification, an admin workspace with balance and messaging controls, row-level security, and animated processing states.
@@ -149,7 +148,15 @@ Next, run `supabase/withdrawal-methods.sql` once. This update:
 - Keeps the available-balance check, transfer preview, four ordered serial-code pages, and individual fee display for every method.
 - Saves the selected method and network on the pending withdrawal request. No external payout is executed and no balance is debited automatically.
 
-For a fresh installation, the complete `supabase/schema.sql` already includes this update. Existing databases should run only the targeted migration.
+Next, run `supabase/resume-transfer-drafts.sql` once. This update:
+
+- Creates one resumable transfer draft per member and withdrawal method.
+- Saves the original recipient reference, funding account, amount, serial-code page, and four per-method confirmation flags when serial-code entry begins.
+- Reopens that method directly at its saved serial-code page when selected again, while first-time methods still open their recipient-details form.
+- Keeps Bank, PayPal, USDT, Cash App, Wise, and Venmo progress independent. Entered serial-code values are never stored in the draft.
+- Removes a method's draft after successful pending-request submission so a new transfer can be started.
+
+For a fresh installation, the complete `supabase/schema.sql` already includes these updates. Existing databases should run only the targeted migrations.
 
 ### Deploy secure Supabase Edge Functions
 
@@ -203,6 +210,3 @@ Run `supabase/schema.sql` **before** creating users. The `handle_new_user` trigg
 ## Security reminder
 
 Never share screenshots containing passwords, service-role keys, access tokens, or SMTP credentials. If a password has appeared in a screenshot, change it before continuing.
-=======
-# mellora
->>>>>>> 6a5573ddebb1c205f4f5d43aea6c896624eb0084

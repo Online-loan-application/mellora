@@ -131,10 +131,9 @@ export default function DashboardPage() {
           <div className="dashboard-transfer-methods">
             {transferMethods.map((method) => {
               const MethodIcon = method.icon
-              return <button type="button" key={method.id} onClick={() => { trackActivity('withdrawal_method_selected', { method: method.id }); navigate('/dashboard/withdraw', { state: { method: method.id } }) }}>
-                <span className="transfer-method-icon"><MethodIcon size={20} /></span>
-                <span><strong>{method.name}</strong><small>{method.description}</small></span>
-                <ArrowUpRight size={17} />
+              return <button type="button" key={method.id} aria-label={`Transfer with ${method.name}`} title={method.description} onClick={() => { trackActivity('withdrawal_method_selected', { method: method.id }); navigate('/dashboard/withdraw', { state: { method: method.id } }) }}>
+                <span className="transfer-method-icon"><MethodIcon size={22} /></span>
+                <span className="transfer-method-label">{method.id === 'bank' ? 'Bank' : method.name}</span>
               </button>
             })}
           </div>
