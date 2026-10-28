@@ -2,7 +2,7 @@
 
 An online-banking interface built with React, JavaScript, Vite, and Supabase. It includes a splash screen, marketing site, email/password and magic-link authentication, a member dashboard with live local time and notifications, admin-managed deposit instructions, step-by-step transfer requests with sequential code-fee verification, an admin workspace with balance and messaging controls, row-level security, and animated processing states.
 
-> New profiles receive sample account data that administrators can replace through the admin workspace.
+> New profiles receive two zero-balance accounts and no sample transactions. Administrators set balances from the admin workspace; each signed balance difference feeds recent activity and full transaction history. Money in totals only admin balance increases, while Money out totals only approved or completed withdrawal requests.
 
 ## Run on a Windows laptop
 
@@ -99,7 +99,7 @@ Finally, run `supabase/payment-requests.sql` once. This non-destructive update a
 - `withdrawal_requests` for pending requests after amount, preview, and four-serial-code entry.
 - The ownership-checked `submit_withdrawal_request` function and row-level security policies.
 
-The update removes the old member `process_account_movement` function. Deposits now display instructions without changing balances. Withdrawals remain pending and do not debit balances or create completed transactions automatically. Raw serial codes are not stored; only a SHA-256 digest is saved with the request.
+The update removes the old member `process_account_movement` function. Deposits now display instructions without changing balances. Withdrawals remain pending and do not debit balances or create completed transactions automatically. Withdrawal requests store a SHA-256 digest rather than the submitted code sequence.
 
 After installing that update, run `supabase/member-admin-controls.sql` once. This adds per-user deposit instructions, individual serial-code sets and amounts, member activity tracking, and admin read access to individual notifications. Existing shared deposit settings are copied to each member before the shared table is retired.
 
@@ -125,6 +125,30 @@ Finally, run `supabase/redefined-transfer-codes.sql` once after the sequential-c
 - Keeps every completed request pending: no automatic balance debit or completed transaction is created.
 
 For a fresh installation, the complete `supabase/schema.sql` already includes this migration. For an existing installation, do not rerun the whole schema; run only the upgrade files you have not installed yet.
+
+Next, run `supabase/zero-balance-dashboard.sql` once. This update:
+
+- Creates new member accounts at **0.00** with no sample transactions.
+- Keeps admin balance updates, recent activity, and full history on the same signed transaction ledger. Money in sums only positive admin adjustments; Money out sums only approved or completed withdrawal requests, excluding other spending and pending requests.
+- Removes only untouched original sample balances and their five original sample transactions. Profiles with admin adjustments or other activity are left unchanged.
+- Adds desktop links for Dashboard, Deposit, and Transfer, plus an accessible mobile hamburger menu. Admin navigation remains limited to the admin dashboard.
+
+Next, run `supabase/persistent-admin-codes.sql` once. This update:
+
+- Saves each newly generated code with its individual member in `member_serial_codes` while retaining the verification hash.
+- Returns saved codes through the admin-checked `admin_get_member_serial_codes` function whenever that member's management page is opened or refreshed.
+- Displays the saved code, name, purpose, fee, paid timestamp, and used timestamp with individual-copy and copy-all controls.
+- Keeps direct table access revoked from browser roles and never returns code values through member functions. Codes generated before this upgrade are hash-only and cannot be recovered; reset that member's code set once to save retrievable codes.
+
+Next, run `supabase/withdrawal-methods.sql` once. This update:
+
+- Adds dashboard shortcuts and saved recipient details for Bank transfer, PayPal, USDT, Cash App, Wise, and Venmo.
+- Supports USDT wallet addresses on TRC20, ERC20, and BEP20, with the selected network saved alongside each wallet.
+- Filters saved details by method, validates method-specific fields, and retrieves them when that transfer page is reopened.
+- Keeps the available-balance check, transfer preview, four ordered serial-code pages, and individual fee display for every method.
+- Saves the selected method and network on the pending withdrawal request. No external payout is executed and no balance is debited automatically.
+
+For a fresh installation, the complete `supabase/schema.sql` already includes this update. Existing databases should run only the targeted migration.
 
 ### Deploy secure Supabase Edge Functions
 
@@ -173,7 +197,7 @@ For a disposable local demo only, you can turn off **Confirm email** in the emai
 
 ### Tables or profiles are missing
 
-Run `supabase/schema.sql` **before** creating users. The `handle_new_user` trigger creates profiles and sample data only for users created after the trigger is installed. If you created users first, create a fresh test user after installing the schema or backfill the missing profile deliberately in SQL.
+Run `supabase/schema.sql` **before** creating users. The `handle_new_user` trigger creates profiles and zero-balance accounts only for users created after the trigger is installed. If you created users first, create a fresh test user after installing the schema or backfill the missing profile deliberately in SQL.
 
 ## Security reminder
 

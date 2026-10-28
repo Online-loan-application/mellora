@@ -102,14 +102,14 @@ begin
   end if;
   if exists (
     select 1 from public.member_serial_codes
-    where user_id = auth.uid() and slot < p_slot and used_at is null and paid_at is null
+    where user_id = auth.uid() and member_serial_codes.slot < p_slot and used_at is null and member_serial_codes.paid_at is null
   ) then
     raise exception 'Confirm the previous serial code before continuing.';
   end if;
 
   select * into v_code_record
   from public.member_serial_codes
-  where user_id = auth.uid() and slot = p_slot and used_at is null;
+  where user_id = auth.uid() and member_serial_codes.slot = p_slot and used_at is null;
 
   if not found then
     raise exception 'Serial code % is unavailable. Ask your administrator for a current code set.', p_slot;
@@ -124,7 +124,7 @@ begin
     v_paid_at := now();
     update public.member_serial_codes
     set paid_at = v_paid_at
-    where user_id = auth.uid() and slot = p_slot and used_at is null;
+    where user_id = auth.uid() and member_serial_codes.slot = p_slot and used_at is null;
 
     insert into public.member_activities (user_id, type, metadata)
     values (

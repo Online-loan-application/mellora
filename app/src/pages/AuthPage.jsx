@@ -107,7 +107,7 @@ export default function AuthPage() {
           <div className="auth-art__card"><LockKeyhole size={28} /><small>SECURE SESSION</small><strong>Protected by design</strong><div><i /><i /><i /><i /><i /><i /></div></div>
           <div className="auth-art__chip"><ShieldCheck size={20} /><span>Supabase authentication</span></div>
         </div>
-        <small className="auth-story__foot">Banking interface concept · No real financial services</small>
+        <small className="auth-story__foot">Private, secure access to your Mellora account</small>
       </section>
 
       <section className="auth-form-side">

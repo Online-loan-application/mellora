@@ -1,0 +1,83 @@
+-- Mellora serial-code verification hotfix
+-- Replaces only the verification function. Existing codes, fees, and paid statuses are preserved.
+
+begin;
+
+create or replace function public.verify_member_serial_code(
+  p_slot integer,
+  p_code text
+)
+returns table(
+  slot integer,
+  amount numeric,
+  code_name text,
+  code_purpose text,
+  paid_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_code_record public.member_serial_codes%rowtype;
+  v_code text := upper(trim(p_code));
+  v_code_hash text;
+  v_paid_at timestamptz;
+begin
+  if auth.uid() is null then
+    raise exception 'You must be signed in to verify a serial code.';
+  end if;
+  if p_slot is null or p_slot not between 1 and 4 then
+    raise exception 'The serial-code position is invalid.';
+  end if;
+  if v_code is null or v_code !~ '^[A-Z0-9]{4,12}$' then
+    raise exception 'Enter 4 to 12 letters or numbers for serial code %.', p_slot;
+  end if;
+  if exists (
+    select 1 from public.member_serial_codes
+    where user_id = auth.uid() and member_serial_codes.slot < p_slot and used_at is null and member_serial_codes.paid_at is null
+  ) then
+    raise exception 'Confirm the previous serial code before continuing.';
+  end if;
+
+  select * into v_code_record
+  from public.member_serial_codes
+  where user_id = auth.uid() and member_serial_codes.slot = p_slot and used_at is null;
+
+  if not found then
+    raise exception 'Serial code % is unavailable. Ask your administrator for a current code set.', p_slot;
+  end if;
+
+  v_code_hash := encode(digest(auth.uid()::text || ':' || p_slot::text || ':' || v_code, 'sha256'), 'hex');
+  if v_code_hash <> v_code_record.code_hash then
+    raise exception 'Serial code % is incorrect. Check the code supplied by your administrator.', p_slot;
+  end if;
+
+  if v_code_record.paid_at is null then
+    v_paid_at := now();
+    update public.member_serial_codes
+    set paid_at = v_paid_at
+    where user_id = auth.uid() and member_serial_codes.slot = p_slot and used_at is null;
+
+    insert into public.member_activities (user_id, type, metadata)
+    values (
+      auth.uid(),
+      'withdrawal_serial_code_confirmed',
+      jsonb_build_object(
+        'slot', p_slot,
+        'amount', v_code_record.amount,
+        'code_name', v_code_record.code_name,
+        'paid', true
+      )
+    );
+  else
+    v_paid_at := v_code_record.paid_at;
+  end if;
+
+  return query
+    select v_code_record.slot::integer, v_code_record.amount,
+      v_code_record.code_name, v_code_record.code_purpose, v_paid_at;
+end;
+$$;
+
+commit;

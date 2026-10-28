@@ -8,6 +8,7 @@ import AppShell from '../components/AppShell'
 import NotificationCenter from '../components/NotificationCenter'
 import Loader, { ButtonLoader } from '../components/Loader'
 import SetupNotice from '../components/SetupNotice'
+import { transferMethods } from '../lib/transferMethods'
 
 const money = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value || 0))
 const date = (value) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(value))
@@ -51,6 +52,7 @@ export default function DashboardPage() {
   const { user, profile, profileError } = useAuth()
   const [accounts, setAccounts] = useState([])
   const [transactions, setTransactions] = useState([])
+  const [withdrawals, setWithdrawals] = useState([])
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -64,16 +66,18 @@ export default function DashboardPage() {
   const loadData = useCallback(async (quiet = false) => {
     if (!user) return
     quiet ? setRefreshing(true) : setLoading(true)
-    const [accountResult, transactionResult, notificationResult] = await Promise.all([
+    const [accountResult, transactionResult, withdrawalResult, notificationResult] = await Promise.all([
       supabase.from('accounts').select('*').eq('user_id', user.id).order('created_at'),
       supabase.from('transactions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('withdrawal_requests').select('id, amount, status, created_at').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
     ])
-    const failure = accountResult.error || transactionResult.error || notificationResult.error
+    const failure = accountResult.error || transactionResult.error || withdrawalResult.error || notificationResult.error
     if (failure) setError(failure.message)
     else {
       setAccounts(accountResult.data || [])
       setTransactions(transactionResult.data || [])
+      setWithdrawals(withdrawalResult.data || [])
       setNotifications(notificationResult.data || [])
       setError('')
     }
@@ -89,9 +93,14 @@ export default function DashboardPage() {
 
   const totals = useMemo(() => ({
     balance: accounts.reduce((sum, item) => sum + Number(item.balance), 0),
-    income: transactions.filter((item) => Number(item.amount) > 0).reduce((sum, item) => sum + Number(item.amount), 0),
-    spending: Math.abs(transactions.filter((item) => Number(item.amount) < 0).reduce((sum, item) => sum + Number(item.amount), 0)),
-  }), [accounts, transactions])
+    income: transactions
+      .filter((item) => item.merchant === 'Admin balance adjustment'
+        && item.category === 'Balance adjustment' && Number(item.amount) > 0)
+      .reduce((sum, item) => sum + Number(item.amount), 0),
+    withdrawn: withdrawals
+      .filter((item) => item.status === 'approved' || item.status === 'completed')
+      .reduce((sum, item) => sum + Math.abs(Number(item.amount)), 0),
+  }), [accounts, transactions, withdrawals])
   const filtered = transactions.filter((item) => `${item.merchant} ${item.category}`.toLowerCase().includes(query.toLowerCase()))
   const firstName = (profile?.full_name || user?.email?.split('@')[0] || 'there').split(' ')[0]
   const hour = now.getHours()
@@ -113,13 +122,26 @@ export default function DashboardPage() {
           <div className="balance-hero__top"><span>TOTAL BALANCE</span><button type="button" onClick={() => setVisible(!visible)} aria-label={visible ? 'Hide balances' : 'Show balances'}>{visible ? <Eye size={18} /> : <EyeOff size={18} />}</button></div>
           <strong>{visible ? money(totals.balance) : '••••••••'}</strong>
           <p><span><i /> Live from Supabase</span> across {accounts.length} accounts</p>
-          <div className="balance-hero__stats"><div><span>Money in</span><strong>{visible ? money(totals.income) : '••••'}</strong></div><div><span>Money out</span><strong>{visible ? money(totals.spending) : '••••'}</strong></div></div>
+          <div className="balance-hero__stats"><div><span>Money in</span><strong>{visible ? money(totals.income) : '••••'}</strong></div><div><span>Money out</span><strong>{visible ? money(totals.withdrawn) : '••••'}</strong></div></div>
           <div className="balance-actions"><button type="button" onClick={() => { trackDepositClick(); navigate('/dashboard/deposit') }}><ArrowDownLeft size={17} />Deposit</button><button type="button" onClick={() => { trackActivity('withdrawal_started'); navigate('/dashboard/withdraw') }} disabled={!accounts.length}><ArrowUpRight size={17} />Transfer</button></div>
           <div className="balance-orb" aria-hidden="true"><i /><i /><span /></div>
         </section>
+        <section className="dashboard-card transfer-methods-card" aria-labelledby="withdrawal-methods-title">
+          <div className="card-heading"><div><span>WITHDRAWAL METHODS</span><h2 id="withdrawal-methods-title">Choose how to send.</h2></div><small>From your available balance</small></div>
+          <div className="dashboard-transfer-methods">
+            {transferMethods.map((method) => {
+              const MethodIcon = method.icon
+              return <button type="button" key={method.id} onClick={() => { trackActivity('withdrawal_method_selected', { method: method.id }); navigate('/dashboard/withdraw', { state: { method: method.id } }) }}>
+                <span className="transfer-method-icon"><MethodIcon size={20} /></span>
+                <span><strong>{method.name}</strong><small>{method.description}</small></span>
+                <ArrowUpRight size={17} />
+              </button>
+            })}
+          </div>
+        </section>
         <div className="dashboard-grid">
           <section className="dashboard-card cashflow-card"><div className="card-heading"><div><span>CASH FLOW</span><h2>Your week in motion</h2></div><small>Last 7 days</small></div><CashflowChart transactions={transactions} /></section>
-          <section className="dashboard-card accounts-card"><div className="card-heading"><div><span>ACCOUNTS</span><h2>Your pockets</h2></div><WalletCards size={20} /></div>{accounts.map((account, index) => <div className="account-mini" key={account.id}><span className={`account-mini__icon account-mini__icon--${index % 2}`}><WalletCards size={19} /></span><div><strong>{account.name}</strong><small>•• {account.last4}</small></div><b>{visible ? money(account.balance) : '••••'}</b></div>)}{!accounts.length && !error && <p className="empty-copy">No accounts yet. New profiles receive sample accounts after the schema trigger is installed.</p>}</section>
+          <section className="dashboard-card accounts-card"><div className="card-heading"><div><span>ACCOUNTS</span><h2>Your pockets</h2></div><WalletCards size={20} /></div>{accounts.map((account, index) => <div className="account-mini" key={account.id}><span className={`account-mini__icon account-mini__icon--${index % 2}`}><WalletCards size={19} /></span><div><strong>{account.name}</strong><small>•• {account.last4}</small></div><b>{visible ? money(account.balance) : '••••'}</b></div>)}{!accounts.length && !error && <p className="empty-copy">No accounts yet. Accounts will appear here after the database setup is complete.</p>}</section>
         </div>
         <section className="dashboard-card recent-card"><div className="card-heading"><div><span>RECENT ACTIVITY</span><h2>Latest transactions</h2></div><button type="button" onClick={() => setView('activity')}>View all <ArrowUpRight size={16} /></button></div>{transactions.slice(0, 5).map((item) => <TransactionRow key={item.id} item={item} />)}{!transactions.length && !error && <p className="empty-copy">Your transaction activity will appear here.</p>}</section>
       </>}

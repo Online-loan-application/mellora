@@ -173,7 +173,6 @@ function NotificationManager({ member, adminId, notifications, onSent }) {
 
 function SerialCodeManager({ memberId, metadata, onReset }) {
   const [amounts, setAmounts] = useState(['', '', '', ''])
-  const [generated, setGenerated] = useState([])
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
   const [copiedAll, setCopiedAll] = useState(false)
@@ -195,7 +194,7 @@ function SerialCodeManager({ memberId, metadata, onReset }) {
     try {
       const { data, error: resetError } = await supabase.rpc('admin_reset_member_serial_codes', { p_user_id: memberId, p_amounts: numeric })
       if (resetError) setError(resetError.message)
-      else { setGenerated(data || []); onReset(data || []) }
+      else onReset(data || [])
     } finally {
       setProcessing(false)
     }
@@ -208,7 +207,8 @@ function SerialCodeManager({ memberId, metadata, onReset }) {
       setError('')
     } catch { setError('Copying is unavailable. Select and copy the codes manually.') }
   }
-  const copyCodes = () => copyText(generated.map((item) => `Code ${item.slot}: ${item.code} — Fee ${money(item.amount)} — ${item.code_name} — ${item.code_purpose}`).join('\n'))
+  const savedCodes = metadata.filter((item) => item.code)
+  const copyCodes = () => copyText(savedCodes.map((item) => `Code ${item.slot}: ${item.code} — Fee ${money(item.amount)} — ${item.code_name} — ${item.code_purpose}`).join('\n'))
 
   return (
     <section className="admin-panel member-tool member-code-tool">
@@ -219,8 +219,7 @@ function SerialCodeManager({ memberId, metadata, onReset }) {
         <div className="code-total"><span>Total code fees<small>Four separate fees · not added to the transfer amount</small></span><strong>{money(total)}</strong></div>
         <button className="button button--green" type="submit" disabled={processing}>{processing ? <ButtonLoader label="Generating" /> : <><RefreshCw size={16} />{metadata.length ? 'Reset codes & fees' : 'Generate codes & fees'}</>}</button>
       </form>
-      {generated.length > 0 && <div className="generated-codes"><div><span>NEW CODE SET</span><button type="button" onClick={copyCodes}>{copiedAll ? <Check size={15} /> : <Copy size={15} />}{copiedAll ? 'Copied all' : 'Copy all'}</button></div><p>Copy each code now. Plaintext codes are shown only after generation and are not stored.</p><ol>{generated.map((item) => <li key={item.slot}><div className="generated-code-heading"><span>Code {item.slot} · {item.code_name}</span><button type="button" onClick={() => copyText(item.code, item.slot)} aria-label={`Copy serial code ${item.slot}`}>{copiedSlot === item.slot ? <Check size={14} /> : <Copy size={14} />}{copiedSlot === item.slot ? 'Copied' : 'Copy code'}</button></div><strong>{item.code}</strong><small>{money(item.amount)} fee · Unpaid</small><p>{item.code_purpose}</p></li>)}</ol></div>}
-      {metadata.length > 0 && <div className="code-metadata"><span>CURRENT CODE STATUS</span><div>{metadata.map((item) => <span key={item.slot}>Code {item.slot} · {item.code_name}<strong>{money(item.amount)}</strong><small>{item.paid_at ? `Fee paid ${dateTime(item.paid_at)}` : 'Fee unpaid'}{item.used_at ? ` · Used ${dateTime(item.used_at)}` : ''}</small><p>{item.code_purpose}</p></span>)}</div></div>}
+      {metadata.length > 0 && <div className="generated-codes"><div><span>SAVED CODE SET</span>{savedCodes.length > 0 && <button type="button" onClick={copyCodes}>{copiedAll ? <Check size={15} /> : <Copy size={15} />}{copiedAll ? 'Copied all' : 'Copy all'}</button>}</div><p>Saved in Supabase for this member and loaded here whenever you open their profile. Only administrators can retrieve these codes.</p><ol>{metadata.map((item) => <li key={item.slot}><div className="generated-code-heading"><span>Code {item.slot} · {item.code_name}</span><button type="button" onClick={() => copyText(item.code, item.slot)} disabled={!item.code} aria-label={`Copy serial code ${item.slot}`}>{copiedSlot === item.slot ? <Check size={14} /> : <Copy size={14} />}{copiedSlot === item.slot ? 'Copied' : 'Copy code'}</button></div><strong>{item.code || 'Legacy code unavailable'}</strong><small>{money(item.amount)} fee · {item.paid_at ? `Paid ${dateTime(item.paid_at)}` : 'Unpaid'}{item.used_at ? ` · Used ${dateTime(item.used_at)}` : ''}</small><p>{item.code_purpose}</p>{!item.code && <p>Reset this set once to save retrievable codes.</p>}</li>)}</ol></div>}
     </section>
   )
 }
@@ -308,7 +307,7 @@ export default function AdminMemberPage() {
       <div className="member-admin-layout">
         <div className="member-admin-main">
           <DepositSettings memberId={member.id} adminId={admin.id} value={deposit} onSaved={(value) => { setDeposit(value); setNotice(`Deposit instructions updated for ${member.full_name}.`) }} />
-          <SerialCodeManager memberId={member.id} metadata={codeMetadata} onReset={() => { setNotice(`A new four-code set was generated for ${member.full_name}.`); loadData(true) }} />
+          <SerialCodeManager memberId={member.id} metadata={codeMetadata} onReset={(codes) => { setCodeMetadata(codes.map((item) => ({ ...item, created_at: new Date().toISOString(), paid_at: null, used_at: null }))); setNotice(`A new four-code set was generated and saved for ${member.full_name}.`); loadData(true) }} />
         </div>
         <aside className="member-admin-side">
           <BalanceManager accounts={accounts} onUpdated={(account, balance) => { setAccounts((items) => items.map((item) => item.id === account.id ? { ...item, balance } : item)); setNotice(`${account.name} updated to ${money(balance)}.`) }} />

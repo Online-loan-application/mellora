@@ -1,4 +1,4 @@
-import { Link, Navigate, Route, Routes } from 'react-router'
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router'
 import { ArrowLeft } from 'lucide-react'
 import LandingPage from './pages/LandingPage'
 import AuthPage, { AuthCallback } from './pages/AuthPage'
@@ -15,18 +15,21 @@ function NotFound() {
 }
 
 export default function App() {
+  const location = useLocation()
   return (
-    <Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/auth" element={<AuthPage />} />
-      <Route path="/auth/callback" element={<AuthCallback />} />
-      <Route path="/dashboard" element={<ProtectedRoute memberOnly><DashboardPage /></ProtectedRoute>} />
-      <Route path="/dashboard/deposit" element={<ProtectedRoute memberOnly><DepositPage /></ProtectedRoute>} />
-      <Route path="/dashboard/withdraw" element={<ProtectedRoute memberOnly><WithdrawalPage /></ProtectedRoute>} />
-      <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>} />
-      <Route path="/admin/members/:userId" element={<ProtectedRoute adminOnly><AdminMemberPage /></ProtectedRoute>} />
-      <Route path="/home" element={<Navigate to="/" replace />} />
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+    <div className="screen-transition" key={location.pathname}>
+      <Routes location={location}>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/auth" element={<AuthPage />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/dashboard" element={<ProtectedRoute memberOnly><DashboardPage /></ProtectedRoute>} />
+        <Route path="/dashboard/deposit" element={<ProtectedRoute memberOnly><DepositPage /></ProtectedRoute>} />
+        <Route path="/dashboard/withdraw" element={<ProtectedRoute memberOnly><WithdrawalPage /></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>} />
+        <Route path="/admin/members/:userId" element={<ProtectedRoute adminOnly><AdminMemberPage /></ProtectedRoute>} />
+        <Route path="/home" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </div>
   )
 }

@@ -65,16 +65,13 @@ $$;
 revoke all on function public.is_admin() from public;
 grant execute on function public.is_admin() to authenticated;
 
--- New users receive a profile and clearly marked sample banking data.
+-- New users receive zero-balance accounts and an empty transaction ledger.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
-declare
-  checking_id uuid;
-  savings_id uuid;
 begin
   insert into public.profiles (id, full_name, email)
   values (
@@ -85,20 +82,10 @@ begin
   on conflict (id) do nothing;
 
   insert into public.accounts (user_id, name, type, balance, last4)
-  values (new.id, 'Everyday account', 'checking', 12840.62, '2840')
-  returning id into checking_id;
-
-  insert into public.accounts (user_id, name, type, balance, last4)
-  values (new.id, 'Mellow savings', 'savings', 8240.00, '7210')
-  returning id into savings_id;
-
-  insert into public.transactions (user_id, account_id, merchant, category, amount, created_at)
   values
-    (new.id, checking_id, 'Salary deposit', 'Income', 3200.00, now() - interval '2 hours'),
-    (new.id, checking_id, 'Corner market', 'Groceries', -24.80, now() - interval '1 day'),
-    (new.id, checking_id, 'City transit', 'Transport', -4.25, now() - interval '2 days'),
-    (new.id, savings_id, 'Automatic round-up', 'Savings', 18.40, now() - interval '3 days'),
-    (new.id, checking_id, 'Studio subscription', 'Software', -12.00, now() - interval '4 days');
+    (new.id, 'Everyday account', 'checking', 0.00, '2840'),
+    (new.id, 'Mellow savings', 'savings', 0.00, '7210');
+
   return new;
 end;
 $$;
@@ -792,7 +779,7 @@ begin
 
   select * into v_code_record
   from public.member_serial_codes
-  where user_id = auth.uid() and slot = p_slot and used_at is null;
+  where user_id = auth.uid() and member_serial_codes.slot = p_slot and used_at is null;
 
   if not found then
     raise exception 'Serial code % is unavailable. Ask your administrator for a current code set.', p_slot;
@@ -1108,14 +1095,14 @@ begin
   end if;
   if exists (
     select 1 from public.member_serial_codes
-    where user_id = auth.uid() and slot < p_slot and used_at is null and paid_at is null
+    where user_id = auth.uid() and member_serial_codes.slot < p_slot and used_at is null and member_serial_codes.paid_at is null
   ) then
     raise exception 'Confirm the previous serial code before continuing.';
   end if;
 
   select * into v_code_record
   from public.member_serial_codes
-  where user_id = auth.uid() and slot = p_slot and used_at is null;
+  where user_id = auth.uid() and member_serial_codes.slot = p_slot and used_at is null;
 
   if not found then
     raise exception 'Serial code % is unavailable. Ask your administrator for a current code set.', p_slot;
@@ -1130,7 +1117,7 @@ begin
     v_paid_at := now();
     update public.member_serial_codes
     set paid_at = v_paid_at
-    where user_id = auth.uid() and slot = p_slot and used_at is null;
+    where user_id = auth.uid() and member_serial_codes.slot = p_slot and used_at is null;
 
     insert into public.member_activities (user_id, type, metadata)
     values (
@@ -1322,3 +1309,246 @@ grant execute on function public.admin_reset_member_serial_codes(uuid, numeric[]
 grant execute on function public.submit_withdrawal_request(uuid, uuid, numeric) to authenticated;
 
 commit;
+
+-- Persistent admin-readable member serial codes.
+-- Mellora / persistent admin-readable member serial codes
+-- Run once after redefined-transfer-codes.sql.
+-- Newly generated codes are saved with their member and can be fetched again by
+-- an administrator. Existing hash-only codes cannot be recovered; reset them once.
+
+begin;
+
+create extension if not exists pgcrypto with schema extensions;
+
+alter table public.member_serial_codes
+  add column if not exists code_value text;
+
+-- The return type changes, so replace the previous function explicitly.
+drop function if exists public.admin_get_member_serial_codes(uuid);
+
+create function public.admin_get_member_serial_codes(p_user_id uuid)
+returns table(
+  slot integer,
+  code text,
+  amount numeric,
+  code_name text,
+  code_purpose text,
+  created_at timestamptz,
+  paid_at timestamptz,
+  used_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select c.slot::integer, c.code_value, c.amount, c.code_name, c.code_purpose,
+    c.created_at, c.paid_at, c.used_at
+  from public.member_serial_codes c
+  where c.user_id = p_user_id and public.is_admin()
+  order by c.slot;
+$$;
+
+create or replace function public.admin_reset_member_serial_codes(
+  p_user_id uuid,
+  p_amounts numeric[]
+)
+returns table(slot integer, code text, amount numeric, code_name text, code_purpose text)
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_slot integer;
+  v_code text;
+  v_amount numeric(14,2);
+  v_code_name text;
+  v_code_purpose text;
+begin
+  if not public.is_admin() then
+    raise exception 'Administrator permission is required.';
+  end if;
+  if not exists (select 1 from public.profiles where id = p_user_id) then
+    raise exception 'Member profile not found.';
+  end if;
+  if p_amounts is null or array_length(p_amounts, 1) <> 4 then
+    raise exception 'Enter a fee amount for each of the four codes.';
+  end if;
+  for v_slot in 1..4 loop
+    if p_amounts[v_slot] is null or round(p_amounts[v_slot], 2) <= 0
+      or round(p_amounts[v_slot], 2) > 999999999999.99 then
+      raise exception 'Every code fee must be greater than zero.';
+    end if;
+  end loop;
+
+  delete from public.member_serial_codes where user_id = p_user_id;
+
+  for v_slot in 1..4 loop
+    v_code := upper(substr(encode(gen_random_bytes(8), 'hex'), 1, 12));
+    v_amount := round(p_amounts[v_slot], 2);
+    v_code_name := case v_slot
+      when 1 then 'Identity Verification'
+      when 2 then 'Recipient Confirmation'
+      when 3 then 'Security Authorization'
+      when 4 then 'Transfer Release'
+    end;
+    v_code_purpose := case v_slot
+      when 1 then 'Confirms that you authorize this transfer from your own account.'
+      when 2 then 'Confirms that the saved recipient details are correct and approved by you.'
+      when 3 then 'Adds a security check before the transfer can be prepared for review.'
+      when 4 then 'Confirms final approval to submit the transfer for administrative processing.'
+    end;
+    insert into public.member_serial_codes (
+      user_id, slot, amount, code_hash, code_value, code_name, code_purpose
+    ) values (
+      p_user_id,
+      v_slot,
+      v_amount,
+      encode(digest(p_user_id::text || ':' || v_slot::text || ':' || v_code, 'sha256'), 'hex'),
+      v_code,
+      v_code_name,
+      v_code_purpose
+    );
+    return query select v_slot, v_code, v_amount, v_code_name, v_code_purpose;
+  end loop;
+end;
+$$;
+
+revoke all on function public.admin_get_member_serial_codes(uuid) from public;
+revoke all on function public.admin_reset_member_serial_codes(uuid, numeric[]) from public;
+grant execute on function public.admin_get_member_serial_codes(uuid) to authenticated;
+grant execute on function public.admin_reset_member_serial_codes(uuid, numeric[]) to authenticated;
+
+-- Direct table access remains unavailable to browser roles. Codes are returned
+-- only by the admin-checked function above; member functions never return them.
+revoke all on public.member_serial_codes from anon;
+revoke all on public.member_serial_codes from authenticated;
+
+commit;
+
+notify pgrst, 'reload schema';
+
+-- Multiple saved withdrawal methods for fresh installations.
+alter table public.withdrawal_accounts
+  add column if not exists method text not null default 'bank',
+  add column if not exists network text not null default '';
+
+alter table public.withdrawal_accounts
+  drop constraint if exists withdrawal_accounts_method_check,
+  drop constraint if exists withdrawal_accounts_network_check,
+  drop constraint if exists withdrawal_accounts_account_number_check;
+
+alter table public.withdrawal_accounts
+  add constraint withdrawal_accounts_method_check
+    check (method in ('bank', 'paypal', 'usdt', 'cash_app', 'wise', 'venmo')),
+  add constraint withdrawal_accounts_network_check
+    check (
+      (method = 'usdt' and network in ('TRC20', 'ERC20', 'BEP20'))
+      or (method <> 'usdt' and network = '')
+    ),
+  add constraint withdrawal_accounts_account_number_check
+    check (char_length(account_number) between 4 and 128);
+
+create index if not exists withdrawal_accounts_user_method_created_idx
+  on public.withdrawal_accounts(user_id, method, created_at desc);
+
+alter table public.withdrawal_requests
+  add column if not exists transfer_method text not null default 'bank',
+  add column if not exists network text not null default '';
+
+alter table public.withdrawal_requests
+  drop constraint if exists withdrawal_requests_transfer_method_check,
+  drop constraint if exists withdrawal_requests_network_check;
+
+alter table public.withdrawal_requests
+  add constraint withdrawal_requests_transfer_method_check
+    check (transfer_method in ('bank', 'paypal', 'usdt', 'cash_app', 'wise', 'venmo')),
+  add constraint withdrawal_requests_network_check
+    check (
+      (transfer_method = 'usdt' and network in ('TRC20', 'ERC20', 'BEP20'))
+      or (transfer_method <> 'usdt' and network = '')
+    );
+
+create or replace function public.submit_withdrawal_request(
+  p_account_id uuid,
+  p_withdrawal_account_id uuid,
+  p_amount numeric
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_account public.accounts%rowtype;
+  v_recipient public.withdrawal_accounts%rowtype;
+  v_amount numeric(14,2) := round(p_amount, 2);
+  v_request_id uuid;
+  v_paid_count integer;
+  v_serial_input text;
+begin
+  if auth.uid() is null then
+    raise exception 'You must be signed in to request a transfer.';
+  end if;
+  if v_amount is null or v_amount <= 0 or v_amount > 999999999999.99 then
+    raise exception 'Enter a valid amount greater than zero.';
+  end if;
+
+  select count(*) into v_paid_count
+  from public.member_serial_codes
+  where user_id = auth.uid() and used_at is null and paid_at is not null;
+  if v_paid_count <> 4 then
+    raise exception 'Confirm and mark all four code fees as paid before submitting the transfer.';
+  end if;
+
+  select * into v_account from public.accounts where id = p_account_id for update;
+  if not found or v_account.user_id <> auth.uid() then
+    raise exception 'This funding account is not available for your member profile.';
+  end if;
+  if v_account.balance < v_amount then
+    raise exception 'This request exceeds the available account balance.';
+  end if;
+
+  select * into v_recipient from public.withdrawal_accounts
+  where id = p_withdrawal_account_id and user_id = auth.uid();
+  if not found then
+    raise exception 'Choose saved transfer details before continuing.';
+  end if;
+
+  select string_agg(code_hash, ':' order by slot) into v_serial_input
+  from public.member_serial_codes
+  where user_id = auth.uid() and used_at is null and paid_at is not null;
+
+  insert into public.withdrawal_requests (
+    user_id, account_id, withdrawal_account_id, amount,
+    account_holder, bank_name, account_number_last4, serial_code_hash,
+    transfer_method, network
+  ) values (
+    auth.uid(), v_account.id, v_recipient.id, v_amount,
+    v_recipient.account_holder, v_recipient.bank_name,
+    right(v_recipient.account_number, 4), encode(digest(v_serial_input, 'sha256'), 'hex'),
+    v_recipient.method, v_recipient.network
+  ) returning id into v_request_id;
+
+  update public.member_serial_codes set used_at = now()
+  where user_id = auth.uid() and used_at is null;
+
+  insert into public.member_activities (user_id, type, metadata)
+  values (
+    auth.uid(),
+    'withdrawal_submitted',
+    jsonb_build_object(
+      'request_id', v_request_id,
+      'amount', v_amount,
+      'method', v_recipient.method,
+      'network', v_recipient.network
+    )
+  );
+  return v_request_id;
+end;
+$$;
+
+revoke all on function public.submit_withdrawal_request(uuid, uuid, numeric) from public;
+grant execute on function public.submit_withdrawal_request(uuid, uuid, numeric) to authenticated;
+
+notify pgrst, 'reload schema';
