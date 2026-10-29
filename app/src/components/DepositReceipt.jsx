@@ -10,7 +10,7 @@ const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'im
 const maxBytes = 10 * 1024 * 1024
 const dateTime = (value) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
 
-export default function DepositReceipt() {
+export default function DepositReceipt({ onStatusChange }) {
   const { user } = useAuth()
   const { showToast } = useToast()
   const [receipt, setReceipt] = useState(null)
@@ -51,6 +51,7 @@ export default function DepositReceipt() {
   }, [user, showToast])
 
   useEffect(() => { loadReceipt() }, [loadReceipt])
+  useEffect(() => { onStatusChange?.(receipt?.status || '') }, [receipt, onStatusChange])
   useEffect(() => { if (error) showToast(error, 'error') }, [error, showToast])
 
   const uploadReceipt = async (event) => {

@@ -16,7 +16,7 @@ const pages = {
   notifications: { title: 'Notifications', eyebrow: 'INDIVIDUAL NOTIFICATIONS' },
   activity: { title: 'Member activity', eyebrow: 'INDIVIDUAL MEMBER ACTIVITY' },
 }
-const emptyDeposit = { bank_name: '', bank_branch: '', account_name: '', account_number: '', routing_number: '', account_type: '', amount: 0, reason: '', instructions: '' }
+const emptyDeposit = { bank_name: '', bank_branch: '', account_name: '', account_number: '', routing_number: '', account_type: '', instructions: '' }
 
 export default function AdminMemberToolPage({ tool }) {
   const { userId } = useParams()

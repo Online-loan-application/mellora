@@ -202,7 +202,7 @@ The latest interface update requires **no additional SQL migration**:
 - Admin refreshes, balance updates, deposit saves, message sends, code generation/reset, copying, validation failures, and deletion outcomes use dismissible toast feedback.
 - Member deletion requires an explicit `{ "deleted": true }` response from the deployed `delete-member` Edge Function. Failures keep the administrator on the member page and re-enable the deletion control; success returns to the member directory.
 
-The current account and access interface also shows each account’s own unreserved balance under **My accounts**, opens the landing page through the Mellora splash, and uses only email/password sign-in and account creation. The deposit page shows an empty explanatory state until all required account details and payment context have been configured; the receipt uploader appears only after configuration.
+The current account and access interface also shows each account’s own unreserved balance under **My accounts**, opens the landing page through the Mellora splash, and uses only email/password sign-in and account creation. Deposit settings contain only bank details and optional instructions—no required amount or payment-context fields. The member deposit page shows an empty explanatory state until the bank name, account name, and account number have been configured. While a receipt is awaiting administrator confirmation, only the receipt-review panel is displayed; the bank details return after confirmation.
 
 ### Deploy secure Supabase Edge Functions
 

@@ -7,7 +7,7 @@ import { ButtonLoader } from './Loader'
 
 const money = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value || 0))
 const dateTime = (value) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
-const emptyDeposit = { bank_name: '', bank_branch: '', account_name: '', account_number: '', routing_number: '', account_type: '', amount: '', reason: '', instructions: '' }
+const emptyDeposit = { bank_name: '', bank_branch: '', account_name: '', account_number: '', routing_number: '', account_type: '', instructions: '' }
 const activityLabels = {
   deposit_clicked: 'Clicked Deposit',
   deposit_receipt_uploaded: 'Uploaded a payment receipt',
@@ -30,19 +30,14 @@ export function DepositSettings({ memberId, adminId, value, onSaved }) {
   const [form, setForm] = useState(emptyDeposit)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  useEffect(() => { setForm({ ...emptyDeposit, ...value, amount: value?.user_id ? Number(value.amount).toFixed(2) : '' }) }, [value])
+  useEffect(() => { setForm({ ...emptyDeposit, ...value }) }, [value])
   const update = (field, next) => setForm((current) => ({ ...current, [field]: next }))
   const fail = (message) => { setError(message); showToast(message, 'error') }
 
   const save = async (event) => {
     event.preventDefault()
-    const amount = Math.round((Number(form.amount) + Number.EPSILON) * 100) / 100
-    if (!form.bank_name.trim() || !form.account_name.trim() || !form.account_number.trim() || !form.reason.trim()) {
-      fail('Enter the bank, account name, account number, and payment context.')
-      return
-    }
-    if (!Number.isFinite(amount) || amount <= 0 || amount > 999999999999.99) {
-      fail('Enter a valid required amount greater than zero.')
+    if (!form.bank_name.trim() || !form.account_name.trim() || !form.account_number.trim()) {
+      fail('Enter the bank, account name, and account number.')
       return
     }
     setSaving(true)
@@ -52,7 +47,7 @@ export function DepositSettings({ memberId, adminId, value, onSaved }) {
         user_id: memberId,
         bank_name: form.bank_name.trim(), bank_branch: form.bank_branch.trim(), account_name: form.account_name.trim(),
         account_number: form.account_number.trim(), routing_number: form.routing_number.trim(), account_type: form.account_type.trim(),
-        amount, reason: form.reason.trim(), instructions: form.instructions.trim(),
+        instructions: form.instructions.trim(),
         updated_by: adminId, updated_at: new Date().toISOString(),
       }
       const { error: saveError } = await supabase.from('member_deposit_settings').upsert(payload, { onConflict: 'user_id' })
@@ -70,7 +65,7 @@ export function DepositSettings({ memberId, adminId, value, onSaved }) {
 
   return (
     <section className="admin-panel member-tool member-deposit-tool">
-      <div className="card-heading"><div><span>INDIVIDUAL DEPOSIT SETTINGS</span><h2>Payment instructions</h2><p>Only this member sees these account details, required amount, and payment context.</p></div><Landmark size={22} /></div>
+      <div className="card-heading"><div><span>INDIVIDUAL DEPOSIT SETTINGS</span><h2>Payment instructions</h2><p>Only this member sees these bank details and additional instructions.</p></div><Landmark size={22} /></div>
       {error && <p className="member-tool-error" role="alert">{error}</p>}
       <form className="member-form" onSubmit={save}>
         <div className="member-form-grid">
@@ -80,8 +75,6 @@ export function DepositSettings({ memberId, adminId, value, onSaved }) {
           <label><span>Account type <small>Optional</small></span><input value={form.account_type} onChange={(event) => update('account_type', event.target.value)} maxLength="60" placeholder="Checking, savings, or other" autoComplete="off" /></label>
           <label><span>Account number</span><input value={form.account_number} onChange={(event) => update('account_number', event.target.value)} maxLength="34" autoComplete="off" required /></label>
           <label><span>Routing number <small>Optional</small></span><input value={form.routing_number} onChange={(event) => update('routing_number', event.target.value)} maxLength="34" autoComplete="off" /></label>
-          <label><span>Required amount (USD)</span><input type="number" min="0.01" max="999999999999.99" step="0.01" value={form.amount} onChange={(event) => update('amount', event.target.value)} required /></label>
-          <label className="member-form-wide"><span>Why the payment is needed</span><input value={form.reason} onChange={(event) => update('reason', event.target.value)} maxLength="240" required /></label>
           <label className="member-form-wide"><span>Additional instructions <small>Optional</small></span><textarea rows="3" value={form.instructions} onChange={(event) => update('instructions', event.target.value)} maxLength="600" /></label>
         </div>
         <div className="member-form-footer"><small>Member-specific · never changes the balance</small><button className="button button--green" type="submit" disabled={saving}>{saving ? <ButtonLoader label="Saving" /> : <><Save size={16} />Save instructions</>}</button></div>

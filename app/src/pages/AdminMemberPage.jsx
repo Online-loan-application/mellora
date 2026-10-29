@@ -89,7 +89,7 @@ export default function AdminMemberPage() {
   if (!member) return <AppShell title="Member not found" eyebrow="MELLORA ADMINISTRATION"><Link className="payment-back" to="/admin"><ArrowLeft size={17} />Back to members</Link><SetupNotice message={error || 'This member profile does not exist.'} /></AppShell>
 
   const tools = [
-    { path: 'deposit', eyebrow: 'INDIVIDUAL DEPOSIT SETTINGS', title: 'Payment instructions', description: 'Set member-specific bank details, amount, reason, and instructions.', icon: Landmark },
+    { path: 'deposit', eyebrow: 'INDIVIDUAL DEPOSIT SETTINGS', title: 'Payment instructions', description: 'Set member-specific bank details and additional instructions.', icon: Landmark },
     { path: 'balances', eyebrow: 'ACCOUNT BALANCES', title: 'Set balances', description: `Manage ${accounts.length} ${accounts.length === 1 ? 'account' : 'accounts'} and record balance adjustments.`, icon: WalletCards },
     { path: 'notifications', eyebrow: 'INDIVIDUAL NOTIFICATIONS', title: 'Messages', description: 'Send direct admin messages and review notification history.', icon: BellRing },
     { path: 'activity', eyebrow: 'MEMBER ACTIVITY', title: 'Recent clicks and steps', description: 'Review deposit, transfer, authorization, Processing, and Pending events.', icon: Activity },
