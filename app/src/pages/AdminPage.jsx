@@ -5,8 +5,10 @@ import { supabase } from '../lib/supabase'
 import AppShell from '../components/AppShell'
 import Loader, { ButtonLoader } from '../components/Loader'
 import SetupNotice from '../components/SetupNotice'
+import { useToast } from '../context/ToastContext'
 
 export default function AdminPage() {
+  const { showToast } = useToast()
   const [profiles, setProfiles] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -23,12 +25,14 @@ export default function AdminPage() {
     else {
       setProfiles(data || [])
       setError('')
+      if (quiet) showToast('Member directory refreshed.', 'success')
     }
     setLoading(false)
     setRefreshing(false)
-  }, [])
+  }, [showToast])
 
   useEffect(() => { loadMembers() }, [loadMembers])
+  useEffect(() => { if (error) showToast(error, 'error') }, [error, showToast])
 
   const filtered = profiles.filter((profile) => `${profile.full_name} ${profile.email}`.toLowerCase().includes(query.toLowerCase()))
 

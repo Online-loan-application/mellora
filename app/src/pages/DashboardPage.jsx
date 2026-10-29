@@ -71,8 +71,8 @@ export default function DashboardPage({ initialView = 'overview' }) {
     const [accountResult, transactionResult, withdrawalResult, draftResult, notificationResult] = await Promise.all([
       supabase.from('accounts').select('*').eq('user_id', user.id).order('created_at'),
       supabase.from('transactions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('withdrawal_requests').select('id, amount, status, transfer_method, network, created_at').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('member_transfer_drafts').select('method, amount, confirmed_codes, created_at, updated_at').eq('user_id', user.id),
+      supabase.from('withdrawal_requests').select('id, account_id, amount, status, transfer_method, network, created_at').eq('user_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('member_transfer_drafts').select('method, account_id, amount, confirmed_codes, authorization_started_at, created_at, updated_at').eq('user_id', user.id),
       supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
     ])
     const failure = accountResult.error || transactionResult.error || withdrawalResult.error || draftResult.error || notificationResult.error
@@ -106,8 +106,9 @@ export default function DashboardPage({ initialView = 'overview' }) {
       && draft.confirmed_codes.length === 4 && draft.confirmed_codes.every(Boolean)
     const hasSavedRequest = (draft) => withdrawals.some((request) =>
       (request.transfer_method || 'bank') === draft.method
-      && Math.abs(Number(request.amount)) === Math.abs(Number(draft.amount)))
-    const processing = transferDrafts.filter((draft) => !fullyConfirmed(draft)).map((draft) => ({
+      && Math.abs(Number(request.amount)) === Math.abs(Number(draft.amount))
+      && (!request.account_id || !draft.account_id || request.account_id === draft.account_id))
+    const processing = transferDrafts.filter((draft) => draft.authorization_started_at && !fullyConfirmed(draft)).map((draft) => ({
       id: `processing-${draft.method}`,
       merchant: 'Processing transfer',
       category: `${methodName(draft.method)} · Authorization in progress`,
@@ -115,7 +116,7 @@ export default function DashboardPage({ initialView = 'overview' }) {
       status: 'Processing',
       created_at: draft.updated_at || draft.created_at,
     }))
-    const authorizedDrafts = transferDrafts.filter((draft) => fullyConfirmed(draft) && !hasSavedRequest(draft))
+    const authorizedDrafts = transferDrafts.filter((draft) => draft.authorization_started_at && fullyConfirmed(draft) && !hasSavedRequest(draft))
     const pendingDrafts = authorizedDrafts.map((draft) => ({
       id: `pending-draft-${draft.method}`,
       merchant: 'Pending transfer',
@@ -137,18 +138,24 @@ export default function DashboardPage({ initialView = 'overview' }) {
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     return { processing, pending: [...pendingDrafts, ...pendingRequests], activity }
   }, [transferDrafts, withdrawals, transactions])
-  const totals = useMemo(() => ({
-    balance: accounts.reduce((sum, item) => sum + Number(item.balance), 0),
-    income: transactions
-      .filter((item) => item.merchant === 'Admin balance adjustment'
-        && item.category === 'Balance adjustment' && Number(item.amount) > 0)
-      .reduce((sum, item) => sum + Number(item.amount), 0),
-    withdrawn: withdrawals
+  const totals = useMemo(() => {
+    const processing = transferStatus.processing.reduce((sum, item) => sum + Math.abs(Number(item.amount)), 0)
+    const pending = transferStatus.pending.reduce((sum, item) => sum + Math.abs(Number(item.amount)), 0)
+    const completedWithdrawals = withdrawals
       .filter((item) => item.status === 'approved' || item.status === 'completed')
-      .reduce((sum, item) => sum + Math.abs(Number(item.amount)), 0),
-    processing: transferStatus.processing.reduce((sum, item) => sum + Math.abs(Number(item.amount)), 0),
-    pending: transferStatus.pending.reduce((sum, item) => sum + Math.abs(Number(item.amount)), 0),
-  }), [accounts, transactions, withdrawals, transferStatus])
+      .reduce((sum, item) => sum + Math.abs(Number(item.amount)), 0)
+    const accountBalance = accounts.reduce((sum, item) => sum + Number(item.balance), 0)
+    return {
+      balance: Math.max(0, accountBalance - processing - pending),
+      income: transactions
+        .filter((item) => item.merchant === 'Admin balance adjustment'
+          && item.category === 'Balance adjustment' && Number(item.amount) > 0)
+        .reduce((sum, item) => sum + Number(item.amount), 0),
+      withdrawn: completedWithdrawals + processing + pending,
+      processing,
+      pending,
+    }
+  }, [accounts, transactions, withdrawals, transferStatus])
   const filtered = transferStatus.activity.filter((item) => `${item.merchant} ${item.category}`.toLowerCase().includes(query.toLowerCase()))
   const statusItems = view === 'processing' ? transferStatus.processing : transferStatus.pending
   const firstName = (profile?.full_name || user?.email?.split('@')[0] || 'there').split(' ')[0]
@@ -167,25 +174,25 @@ export default function DashboardPage({ initialView = 'overview' }) {
       </div>
       {view === 'overview' && <>
         <section className="balance-hero">
-          <div className="balance-hero__top"><span>TOTAL BALANCE</span><button type="button" onClick={() => setVisible(!visible)} aria-label={visible ? 'Hide balances' : 'Show balances'}>{visible ? <Eye size={18} /> : <EyeOff size={18} />}</button></div>
+          <div className="balance-hero__top"><span>AVAILABLE BALANCE</span><button type="button" onClick={() => setVisible(!visible)} aria-label={visible ? 'Hide balances' : 'Show balances'}>{visible ? <Eye size={18} /> : <EyeOff size={18} />}</button></div>
           <strong>{visible ? money(totals.balance) : '••••••••'}</strong>
           <p><span><i /> Live from Supabase</span> across {accounts.length} accounts</p>
           <div className="balance-hero__stats"><div><span>Money in</span><strong>{visible ? money(totals.income) : '••••'}</strong></div><div><span>Money out</span><strong>{visible ? money(totals.withdrawn) : '••••'}</strong></div></div>
           <div className="balance-actions"><button type="button" onClick={() => { trackDepositClick(); navigate('/dashboard/deposit') }}><ArrowDownLeft size={17} />Deposit</button><button type="button" onClick={() => { trackActivity('withdrawal_started'); navigate('/dashboard/withdraw') }} disabled={!accounts.length}><ArrowUpRight size={17} />Transfer</button></div>
           <div className="balance-orb" aria-hidden="true"><i /><i /><span /></div>
         </section>
-        <section className="transfer-status-grid" aria-label="Transfer status totals">
-          <button type="button" className="transfer-status-card processing" onClick={() => navigate('/dashboard/processing')}>
+        {(totals.processing > 0 || totals.pending > 0) && <section className="transfer-status-grid" aria-label="Transfer status totals">
+          {totals.processing > 0 && <button type="button" className="transfer-status-card processing" onClick={() => navigate('/dashboard/processing')}>
             <span className="transfer-status-card__icon"><RefreshCw size={20} /></span>
             <div><span>PROCESSING TRANSFERS</span><strong>{visible ? money(totals.processing) : '••••'}</strong><small>{transferStatus.processing.length} in progress</small></div>
             <ArrowUpRight size={18} />
-          </button>
-          <button type="button" className="transfer-status-card pending" onClick={() => navigate('/dashboard/pending')}>
+          </button>}
+          {totals.pending > 0 && <button type="button" className="transfer-status-card pending" onClick={() => navigate('/dashboard/pending')}>
             <span className="transfer-status-card__icon"><Clock3 size={20} /></span>
             <div><span>PENDING TRANSFERS</span><strong>{visible ? money(totals.pending) : '••••'}</strong><small>{transferStatus.pending.length} awaiting review</small></div>
             <ArrowUpRight size={18} />
-          </button>
-        </section>
+          </button>}
+        </section>}
         <section className="dashboard-card transfer-methods-card" aria-labelledby="withdrawal-methods-title">
           <div className="card-heading"><div><span>WITHDRAWAL METHODS</span><h2 id="withdrawal-methods-title">Choose how to send.</h2></div><small>From your available balance</small></div>
           <div className="dashboard-transfer-methods">

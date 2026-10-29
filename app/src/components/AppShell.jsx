@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router'
-import { ArrowDownLeft, ArrowUpRight, Clock3, LayoutDashboard, LoaderCircle, LogOut, Menu, ShieldCheck, X } from 'lucide-react'
+import { Activity, ArrowDownLeft, ArrowUpRight, BellRing, Clock3, KeyRound, Landmark, LayoutDashboard, LoaderCircle, LogOut, Menu, ShieldCheck, UserRound, WalletCards, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import Logo from './Logo'
 import { ButtonLoader } from './Loader'
@@ -15,8 +15,19 @@ export default function AppShell({ children, title, eyebrow, actions }) {
   const closeButtonRef = useRef(null)
   const name = profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Member'
   const homePath = role === 'admin' ? '/admin' : '/dashboard'
+  const selectedMemberId = location.pathname.match(/^\/admin\/members\/([^/]+)/)?.[1]
   const links = role === 'admin'
-    ? [{ to: '/admin', label: 'Admin dashboard', icon: ShieldCheck, end: true }]
+    ? [
+        { to: '/admin', label: 'Member directory', icon: ShieldCheck, end: true },
+        ...(selectedMemberId ? [
+          { to: `/admin/members/${selectedMemberId}`, label: 'Member overview', icon: UserRound, end: true },
+          { to: `/admin/members/${selectedMemberId}/deposit`, label: 'Deposit settings', icon: Landmark },
+          { to: `/admin/members/${selectedMemberId}/balances`, label: 'Account balances', icon: WalletCards },
+          { to: `/admin/members/${selectedMemberId}/notifications`, label: 'Notifications', icon: BellRing },
+          { to: `/admin/members/${selectedMemberId}/activity`, label: 'Member activity', icon: Activity },
+          { to: `/admin/members/${selectedMemberId}/methods`, label: 'Transfer authorization', icon: KeyRound },
+        ] : []),
+      ]
     : [
         { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
         { to: '/dashboard/deposit', label: 'Deposit', icon: ArrowDownLeft },

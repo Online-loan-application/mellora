@@ -7,6 +7,9 @@ import DepositPage from './pages/DepositPage'
 import WithdrawalPage from './pages/WithdrawalPage'
 import AdminPage from './pages/AdminPage'
 import AdminMemberPage from './pages/AdminMemberPage'
+import AdminMethodPage from './pages/AdminMethodPage'
+import AdminMemberToolPage from './pages/AdminMemberToolPage'
+import AdminMemberMethodsPage from './pages/AdminMemberMethodsPage'
 import ProtectedRoute from './components/ProtectedRoute'
 import './App.css'
 
@@ -29,6 +32,12 @@ export default function App() {
         <Route path="/dashboard/withdraw" element={<ProtectedRoute memberOnly><WithdrawalPage /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>} />
         <Route path="/admin/members/:userId" element={<ProtectedRoute adminOnly><AdminMemberPage /></ProtectedRoute>} />
+        <Route path="/admin/members/:userId/methods/:method" element={<ProtectedRoute adminOnly><AdminMethodPage /></ProtectedRoute>} />
+        <Route path="/admin/members/:userId/methods" element={<ProtectedRoute adminOnly><AdminMemberMethodsPage /></ProtectedRoute>} />
+        <Route path="/admin/members/:userId/deposit" element={<ProtectedRoute adminOnly><AdminMemberToolPage tool="deposit" /></ProtectedRoute>} />
+        <Route path="/admin/members/:userId/balances" element={<ProtectedRoute adminOnly><AdminMemberToolPage tool="balances" /></ProtectedRoute>} />
+        <Route path="/admin/members/:userId/notifications" element={<ProtectedRoute adminOnly><AdminMemberToolPage tool="notifications" /></ProtectedRoute>} />
+        <Route path="/admin/members/:userId/activity" element={<ProtectedRoute adminOnly><AdminMemberToolPage tool="activity" /></ProtectedRoute>} />
         <Route path="/home" element={<Navigate to="/" replace />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

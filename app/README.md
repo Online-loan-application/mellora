@@ -2,7 +2,7 @@
 
 An online-banking interface built with React, JavaScript, Vite, and Supabase. It includes a splash screen, marketing site, email/password and magic-link authentication, a member dashboard with live local time and notifications, admin-managed deposit instructions, step-by-step transfer requests with sequential code-fee verification, an admin workspace with balance and messaging controls, row-level security, and animated processing states.
 
-> New profiles receive two zero-balance accounts and no sample transactions. Administrators set balances from the admin workspace; each signed balance difference feeds recent activity and full transaction history. Money in totals only admin balance increases, while Money out totals only approved or completed withdrawal requests.
+> New profiles receive two zero-balance accounts and no sample transactions. Administrators set balances from the admin workspace; each signed balance difference feeds recent activity and full transaction history. Money in totals only admin balance increases. Money out includes approved or completed withdrawal requests plus current Processing and Pending commitments, which are also reserved from the displayed available balance.
 
 ## Run on a Windows laptop
 
@@ -103,7 +103,7 @@ The update removes the old member `process_account_movement` function. Deposits 
 
 After installing that update, run `supabase/member-admin-controls.sql` once. This adds per-user deposit instructions, individual serial-code sets and amounts, member activity tracking, and admin read access to individual notifications. Existing shared deposit settings are copied to each member before the shared table is retired.
 
-The admin home page now contains only the user directory. Select a user to manage their profile, role, balances, deposit instructions, notifications, serial codes, activity, or deletion. Each of the four serial codes has its own amount; the withdrawal amount must exactly equal their combined total. Codes become single-use after a successful request, and administrators can reset both the codes and amounts.
+The admin home page contains the user directory. Select a user to manage their profile, role, balances, deposit instructions, notifications, transfer authorization, activity, or deletion. Each of the four authorization codes has its own admin-entered fee; the transfer amount is independent of those fees. Codes become single-use after a successful request, and administrators can reset both the codes and amounts.
 
 Next, run `supabase/sequential-withdrawal-codes.sql` once. This upgrade adds:
 
@@ -171,7 +171,28 @@ Next, run `supabase/member-transfer-status-notifications.sql` once. This update:
 - Creates a notification for every recorded member activity, including direct database activity created by transfer submission and authorization verification. Transfer, balance, admin-message, and general activity notifications retain their own types.
 - Adds dismissible toast feedback for member authentication, dashboard refreshes, recipient saves, transfer status changes, deposit copying, notification updates, and errors.
 
+Next, run `supabase/method-transfer-codes.sql` once. This update:
+
+- Makes authorization codes, fees, Paid/Unpaid state, and verification independent for every member and payment method. Existing code sets are preserved as Bank transfer sets.
+- Creates a resumable draft when the member reaches Preview, so that method appears in their admin area. Methods that have not been previewed do not appear.
+- Adds a separate admin page for each previewed method, with saved codes, individual fee amounts, paid status, and generation/reset controls.
+- Resets only the selected method when its codes are regenerated: all four become unpaid, its confirmations return to the first step, and its countdown clears. Other methods remain unchanged.
+- Enforces strict sequential verification for the current method and consumes only that method's paid codes during final submission.
+- Keeps preview-only drafts out of Processing. Processing still begins only when the member enters authorization, then moves to Pending after all confirmations.
+
 For a fresh installation, the complete `supabase/schema.sql` already includes these updates. Existing databases should run only the targeted migrations.
+
+### Current balance and admin interface behavior
+
+The latest interface update requires **no additional SQL migration**:
+
+- Available balance subtracts current Processing and Pending commitments from the account total. Money out includes those commitments as well as approved or completed withdrawal requests.
+- Processing and Pending cards appear on the dashboard only when their respective totals are greater than zero.
+- The transfer form calculates each funding account's remaining unreserved balance and rejects amounts above it. The current method's existing draft does not reserve against itself while being edited; other authorized drafts and pending requests remain reserved.
+- Transfer Preview omits the authorization-fee row and explains that continuing opens authorization and reserves the amount without making an external payout.
+- Each member overview links to dedicated Deposit settings, Account balances, Notifications, Member activity, and Transfer authorization pages. The same destinations appear in contextual desktop and mobile sidebar navigation.
+- Admin refreshes, balance updates, deposit saves, message sends, code generation/reset, copying, validation failures, and deletion outcomes use dismissible toast feedback.
+- Member deletion requires an explicit `{ "deleted": true }` response from the deployed `delete-member` Edge Function. Failures keep the administrator on the member page and re-enable the deletion control; success returns to the member directory.
 
 ### Deploy secure Supabase Edge Functions
 

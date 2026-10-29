@@ -20,7 +20,7 @@ const money = (value) => new Intl.NumberFormat('en-US', {
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100
 const emptyConfirmations = [false, false, false, false]
 const accountFields = 'id, account_holder, bank_name, account_number, routing_number, method, network, created_at'
-const draftFields = 'user_id, method, withdrawal_account_id, account_id, amount, serial_step, confirmed_codes, next_code_available_at, created_at, updated_at'
+const draftFields = 'user_id, method, withdrawal_account_id, account_id, amount, serial_step, confirmed_codes, next_code_available_at, authorization_started_at, created_at, updated_at'
 const nextCodeDelayMs = 30 * 60 * 1000
 const normalizeConfirmations = (value) => Array.from({ length: 4 }, (_, index) => Boolean(Array.isArray(value) && value[index]))
 const firstUnpaidIndex = (confirmations) => {
@@ -40,6 +40,7 @@ export default function WithdrawalPage() {
   const [accounts, setAccounts] = useState([])
   const [savedAccounts, setSavedAccounts] = useState([])
   const [drafts, setDrafts] = useState([])
+  const [transferRequests, setTransferRequests] = useState([])
   const [method, setMethod] = useState(requestedMethod)
   const [details, setDetails] = useState(() => createMethodDetails(requestedMethod || 'bank', profile?.full_name || ''))
   const [withdrawalAccountId, setWithdrawalAccountId] = useState('')
@@ -72,7 +73,7 @@ export default function WithdrawalPage() {
     setWithdrawalAccountId(recipient.id)
     setAccountId(fundingAccount.id)
     setAmount(Number(draft.amount).toFixed(2))
-    setAgreed(true)
+    setAgreed(Boolean(draft.authorization_started_at))
     setConfirmedCodes(nextConfirmed)
     setSerialStep(nextSerialStep)
     setNextCodeAvailableAt(nextSerialStep > 0 && !nextConfirmed.every(Boolean) ? draft.next_code_available_at || '' : '')
@@ -81,7 +82,7 @@ export default function WithdrawalPage() {
     setSerialCodes(['', '', '', ''])
     setConfirmationNotice('')
     setError('')
-    setStep(3)
+    setStep(draft.authorization_started_at ? 3 : 2)
     return true
   }, [])
 
@@ -90,13 +91,14 @@ export default function WithdrawalPage() {
     setLoading(true)
     setError('')
     try {
-      const [accountResult, withdrawalResult, codeResult, draftResult] = await Promise.all([
+      const [accountResult, withdrawalResult, codeResult, draftResult, requestResult] = await Promise.all([
         supabase.from('accounts').select('id, name, balance, currency, last4').eq('user_id', user.id).order('created_at'),
         supabase.from('withdrawal_accounts').select(accountFields).eq('user_id', user.id).order('created_at', { ascending: false }),
-        supabase.rpc('member_get_serial_code_requirements'),
+        supabase.rpc('member_get_serial_code_requirements', { p_method: requestedMethod || 'bank' }),
         supabase.from('member_transfer_drafts').select(draftFields).eq('user_id', user.id),
+        supabase.from('withdrawal_requests').select('id, account_id, amount, status, transfer_method, created_at').eq('user_id', user.id).in('status', ['pending']),
       ])
-      const failure = accountResult.error || withdrawalResult.error || codeResult.error || draftResult.error
+      const failure = accountResult.error || withdrawalResult.error || codeResult.error || draftResult.error || requestResult.error
       if (failure) {
         setError(failure.message)
       } else {
@@ -109,6 +111,7 @@ export default function WithdrawalPage() {
         const nextRequirements = codeResult.data || []
         setCodeRequirements(nextRequirements)
         setDrafts(nextDrafts)
+        setTransferRequests(requestResult.data || [])
         if (requestedMethod) {
           const draft = nextDrafts.find((item) => item.method === requestedMethod)
           if (draft) resumeDraft(draft, nextAccounts, nextRecipients, nextRequirements)
@@ -125,6 +128,17 @@ export default function WithdrawalPage() {
       setLoading(false)
     }
   }, [user, profile?.full_name, requestedMethod, resumeDraft])
+
+  const loadCodeRequirements = useCallback(async (methodId) => {
+    const { data, error: requirementsError } = await supabase.rpc('member_get_serial_code_requirements', { p_method: methodId })
+    if (requirementsError) {
+      setError(requirementsError.message)
+      return null
+    }
+    const requirements = data || []
+    setCodeRequirements(requirements)
+    return requirements
+  }, [])
 
   useEffect(() => { loadData() }, [loadData])
   useEffect(() => {
@@ -148,8 +162,19 @@ export default function WithdrawalPage() {
   const methodAccounts = useMemo(() => savedAccounts.filter((account) => (account.method || 'bank') === method), [savedAccounts, method])
   const currentDraft = useMemo(() => drafts.find((draft) => draft.method === method), [drafts, method])
   const roundedAmount = roundMoney(amount)
+  const reservedByAccount = useMemo(() => {
+    const reserved = {}
+    drafts.filter((draft) => draft.authorization_started_at && draft.method !== method).forEach((draft) => {
+      reserved[draft.account_id] = (reserved[draft.account_id] || 0) + Math.abs(Number(draft.amount))
+    })
+    transferRequests.forEach((request) => {
+      reserved[request.account_id] = (reserved[request.account_id] || 0) + Math.abs(Number(request.amount))
+    })
+    return reserved
+  }, [drafts, transferRequests, method])
+  const availableForAccount = useCallback((account) => Math.max(0, Number(account?.balance || 0) - (reservedByAccount[account?.id] || 0)), [reservedByAccount])
+  const selectedAvailableBalance = availableForAccount(selectedAccount)
   const codeSetReady = codeRequirements.length === 4
-  const feeTotal = roundMoney(codeRequirements.reduce((sum, item) => sum + Number(item.amount || 0), 0))
   const currentRequirement = codeRequirements.find((item) => Number(item.slot) === serialStep + 1)
   const allConfirmed = confirmedCodes.every(Boolean)
   const unlockTime = Date.parse(nextCodeAvailableAt)
@@ -161,22 +186,31 @@ export default function WithdrawalPage() {
 
   const updateDetail = (field, value) => setDetails((current) => ({ ...current, [field]: value }))
 
-  const selectMethod = (methodId) => {
-    const draft = drafts.find((item) => item.method === methodId)
-    if (draft && resumeDraft(draft, accounts, savedAccounts, codeRequirements)) {
-      trackActivity('withdrawal_draft_resumed', { method: methodId })
-      return
-    }
-    setMethod(methodId)
-    setDetails(createMethodDetails(methodId, profile?.full_name || ''))
-    setWithdrawalAccountId('')
-    setAmount('')
-    setAgreed(false)
-    setNextCodeAvailableAt('')
-    setShowCodeSplash(false)
+  const selectMethod = async (methodId) => {
+    setProcessing(true)
     setError('')
-    setStep(0)
-    trackActivity('withdrawal_method_selected', { method: methodId })
+    try {
+      const requirements = await loadCodeRequirements(methodId)
+      if (!requirements) return
+      const draft = drafts.find((item) => item.method === methodId)
+      if (draft && resumeDraft(draft, accounts, savedAccounts, requirements)) {
+        trackActivity('withdrawal_draft_resumed', { method: methodId })
+        return
+      }
+      setMethod(methodId)
+      setDetails(createMethodDetails(methodId, profile?.full_name || ''))
+      setWithdrawalAccountId('')
+      setAmount('')
+      setAgreed(false)
+      setNextCodeAvailableAt('')
+      setShowCodeSplash(false)
+      setStep(0)
+      trackActivity('withdrawal_method_selected', { method: methodId })
+    } catch (requestError) {
+      setError(requestError.message || 'The transfer method could not be opened.')
+    } finally {
+      setProcessing(false)
+    }
   }
 
   const changeMethod = () => {
@@ -186,6 +220,7 @@ export default function WithdrawalPage() {
     setAmount('')
     setAgreed(false)
     setNextCodeAvailableAt('')
+    setCodeRequirements([])
     setShowCodeSplash(false)
     setError('')
     setStep(0)
@@ -252,23 +287,39 @@ export default function WithdrawalPage() {
     }
   }
 
-  const continueFromAmount = (event) => {
+  const continueFromAmount = async (event) => {
     event.preventDefault()
     if (!accountId || !Number.isFinite(Number(amount)) || roundedAmount <= 0) {
       setError('Choose a funding account and enter an amount greater than zero.')
       return
     }
-    if (roundedAmount > Number(selectedAccount?.balance || 0)) {
-      setError(`This transfer exceeds the available balance of ${money(selectedAccount?.balance)}.`)
+    if (roundedAmount > selectedAvailableBalance) {
+      setError(`This transfer exceeds the available balance of ${money(selectedAvailableBalance)} after Processing and Pending transfers.`)
       return
     }
+    setProcessing(true)
     setError('')
-    trackActivity('withdrawal_amount_entered', { amount: roundedAmount, method })
-    trackActivity('withdrawal_previewed', { amount: roundedAmount, method })
-    setStep(2)
+    try {
+      const requirements = await loadCodeRequirements(method)
+      if (!requirements) return
+      const saved = await persistDraft(
+        currentDraft?.serial_step ?? 0,
+        normalizeConfirmations(currentDraft?.confirmed_codes),
+        currentDraft?.next_code_available_at || null,
+        currentDraft?.authorization_started_at || null,
+      )
+      if (!saved) return
+      trackActivity('withdrawal_amount_entered', { amount: roundedAmount, method })
+      trackActivity('withdrawal_previewed', { amount: roundedAmount, method })
+      setStep(2)
+    } catch (requestError) {
+      setError(requestError.message || 'Your transfer preview could not be saved.')
+    } finally {
+      setProcessing(false)
+    }
   }
 
-  const persistDraft = async (nextSerialStep, nextConfirmed, unlockAt = nextCodeAvailableAt || null) => {
+  const persistDraft = async (nextSerialStep, nextConfirmed, unlockAt = nextCodeAvailableAt || null, authorizationStartedAt = currentDraft?.authorization_started_at || null) => {
     const payload = {
       user_id: user.id,
       method,
@@ -278,6 +329,7 @@ export default function WithdrawalPage() {
       serial_step: nextSerialStep,
       confirmed_codes: nextConfirmed,
       next_code_available_at: unlockAt,
+      authorization_started_at: authorizationStartedAt,
       updated_at: new Date().toISOString(),
     }
     const { data, error: draftError } = await supabase.from('member_transfer_drafts')
@@ -314,6 +366,7 @@ export default function WithdrawalPage() {
     setConfirmationNotice('')
     try {
       const { data, error: verificationError } = await supabase.rpc('verify_member_serial_code', {
+        p_method: method,
         p_slot: serialStep + 1,
         p_code: code,
       })
@@ -392,9 +445,11 @@ export default function WithdrawalPage() {
     const unlockAt = nextSerialStep > 0 && !nextConfirmed.every(Boolean)
       ? currentDraft?.next_code_available_at || null
       : null
+    const wasAuthorizationStarted = Boolean(currentDraft?.authorization_started_at)
+    const authorizationStartedAt = currentDraft?.authorization_started_at || new Date().toISOString()
     setProcessing(true)
     setError('')
-    const saved = await persistDraft(nextSerialStep, nextConfirmed, unlockAt)
+    const saved = await persistDraft(nextSerialStep, nextConfirmed, unlockAt, authorizationStartedAt)
     setProcessing(false)
     if (!saved) return
     setSerialCodes(['', '', '', ''])
@@ -404,7 +459,7 @@ export default function WithdrawalPage() {
     setNow(Date.now())
     setConfirmationNotice('')
     trackActivity('withdrawal_serial_codes_started', { amount: roundedAmount, method })
-    if (!currentDraft) {
+    if (!wasAuthorizationStarted) {
       trackActivity('transfer_processing', { amount: roundedAmount, method })
       showToast(`${money(roundedAmount)} added to Processing transfers.`, 'success')
     }
@@ -434,7 +489,7 @@ export default function WithdrawalPage() {
                 <div className="transfer-method-picker">
                   {transferMethods.map((item) => {
                     const ItemIcon = item.icon
-                    return <button type="button" key={item.id} onClick={() => selectMethod(item.id)}><span className="transfer-method-icon"><ItemIcon size={20} /></span><span><strong>{item.name}</strong><small>{item.description}</small></span><ArrowRight size={17} /></button>
+                    return <button type="button" key={item.id} onClick={() => selectMethod(item.id)} disabled={processing}><span className="transfer-method-icon"><ItemIcon size={20} /></span><span><strong>{item.name}</strong><small>{item.description}</small></span><ArrowRight size={17} /></button>
                   })}
                 </div>
               </div>
@@ -473,10 +528,10 @@ export default function WithdrawalPage() {
               <form onSubmit={continueFromAmount}>
                 <div className="payment-panel__heading"><div><span>STEP 2 · TRANSFER AMOUNT</span><h2 id="withdrawal-title">How much?</h2><p>Choose the Mellora account to fund this {currentMethod.name} transfer. The amount can be any positive value up to your available balance. Your balance stays unchanged while pending.</p></div><WalletCards size={26} /></div>
                 <div className="withdrawal-saved-account"><span>{currentMethod.name.toUpperCase()}{details.network ? ` · ${details.network}` : ''}</span><strong>{details.account_holder}</strong><small>{destinationSummary(details)}</small><button type="button" onClick={() => setStep(0)}>Change details</button></div>
-                <label className="payment-field"><span>Fund from</span><select value={accountId} onChange={(event) => setAccountId(event.target.value)} required>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {money(account.balance)}</option>)}</select></label>
-                <div className="available-balance-line"><span>Available balance</span><strong>{money(selectedAccount?.balance)}</strong></div>
+                <label className="payment-field"><span>Fund from</span><select value={accountId} onChange={(event) => setAccountId(event.target.value)} required>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {money(availableForAccount(account))} available</option>)}</select></label>
+                <div className="available-balance-line"><span>Available after Processing and Pending transfers</span><strong>{money(selectedAvailableBalance)}</strong></div>
                 <label className="payment-field"><span>Transfer amount</span><div className="payment-amount-input"><span>$</span><input type="number" min="0.01" max="999999999999.99" step="0.01" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" autoFocus required /></div></label>
-                <div className="payment-form-actions"><button className="payment-secondary" type="button" onClick={() => setStep(0)}><ArrowLeft size={16} />Back</button><button className="button button--green" type="submit">Preview transfer<ArrowRight size={17} /></button></div>
+                <div className="payment-form-actions"><button className="payment-secondary" type="button" onClick={() => setStep(0)}><ArrowLeft size={16} />Back</button><button className="button button--green" type="submit" disabled={processing}>{processing ? <ButtonLoader label="Saving preview" /> : <>Preview transfer<ArrowRight size={17} /></>}</button></div>
               </form>
             )}
 
@@ -489,10 +544,9 @@ export default function WithdrawalPage() {
                   {method === 'bank' && <div><dt>Recipient bank</dt><dd>{details.bank_name}</dd></div>}
                   <div><dt>{currentMethod.destinationLabel}</dt><dd>{destinationSummary(details)}</dd></div>
                   <div><dt>Fund from</dt><dd>{selectedAccount?.name} · •• {selectedAccount?.last4}</dd></div>
-                  <div><dt>Authorization fees</dt><dd>{money(feeTotal)} · shown separately</dd></div>
                   <div className="withdrawal-preview__total"><dt>Transfer amount</dt><dd>{money(roundedAmount)}</dd></div>
                 </dl>
-                <div className="payment-information"><LockKeyhole size={19} /><p>This creates a pending request only. It does not debit your balance or add a completed transaction. Authorization fees are not added to the transfer amount.</p></div>
+                <div className="payment-information"><LockKeyhole size={19} /><p>Review the recipient, funding account, and amount carefully. Continuing opens secure authorization and reserves this amount from your available balance; no external payout is made at this step.</p></div>
                 {!codeSetReady && <p className="payment-inline-warning">Ask your administrator to prepare your transfer authorization before continuing.</p>}
                 <label className="withdrawal-agreement"><input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} /><span>I confirm that these transfer details are correct and want to continue to secure authorization.</span></label>
                 <div className="payment-form-actions"><button className="payment-secondary" type="button" onClick={() => setStep(1)}><ArrowLeft size={16} />Back</button><button className="button button--green" type="button" disabled={processing || !agreed || !codeSetReady} onClick={startSerialVerification}>{processing ? <ButtonLoader label="Saving" /> : <>Transfer<KeyRound size={17} /></>}</button></div>
