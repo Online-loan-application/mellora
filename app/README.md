@@ -1,6 +1,6 @@
 # Mellora
 
-An online-banking interface built with React, JavaScript, Vite, and Supabase. It includes a splash screen, marketing site, email/password and magic-link authentication, a member dashboard with live local time and notifications, admin-managed deposit instructions, step-by-step transfer requests with sequential code-fee verification, an admin workspace with balance and messaging controls, row-level security, and animated processing states.
+An online-banking interface built with React, JavaScript, Vite, and Supabase. It includes a splash screen, marketing site, email/password authentication, a member dashboard with live local time and notifications, admin-managed deposit instructions, private payment-receipt uploads with admin confirmation, step-by-step transfer requests with sequential code-fee verification, an admin workspace with balance and messaging controls, row-level security, and animated processing states.
 
 > New profiles receive two zero-balance accounts and no sample transactions. Administrators set balances from the admin workspace; each signed balance difference feeds recent activity and full transaction history. Money in totals only admin balance increases. Money out includes approved or completed withdrawal requests plus current Processing and Pending commitments, which are also reserved from the displayed available balance.
 
@@ -180,6 +180,14 @@ Next, run `supabase/method-transfer-codes.sql` once. This update:
 - Enforces strict sequential verification for the current method and consumes only that method's paid codes during final submission.
 - Keeps preview-only drafts out of Processing. Processing still begins only when the member enters authorization, then moves to Pending after all confirmations.
 
+Next, run `supabase/deposit-receipts.sql` once. This update:
+
+- Creates the `deposit_receipts` metadata table and a private `deposit-receipts` Supabase Storage bucket. Receipt images are never stored as database blobs or public URLs.
+- Lets members upload one JPEG, PNG, WebP, HEIC, or HEIF image up to 10 MB from the configured deposit page. The latest upload displays **Confirming receipt** until an administrator reviews it.
+- Adds the member’s latest receipt and a full-image preview to the admin’s dedicated Deposit settings page, with a confirmation action and refresh control.
+- Restricts member uploads and reads to their own storage folder and records. Only administrators can retrieve every member’s receipts or change confirmation status; members cannot confirm their own receipts.
+- Records receipt uploads and confirmations in member activity and creates corresponding notifications. A new upload is allowed after the previous receipt has been confirmed.
+
 For a fresh installation, the complete `supabase/schema.sql` already includes these updates. Existing databases should run only the targeted migrations.
 
 ### Current balance and admin interface behavior
@@ -193,6 +201,8 @@ The latest interface update requires **no additional SQL migration**:
 - Each member overview links to dedicated Deposit settings, Account balances, Notifications, Member activity, and Transfer authorization pages. The same destinations appear in contextual desktop and mobile sidebar navigation.
 - Admin refreshes, balance updates, deposit saves, message sends, code generation/reset, copying, validation failures, and deletion outcomes use dismissible toast feedback.
 - Member deletion requires an explicit `{ "deleted": true }` response from the deployed `delete-member` Edge Function. Failures keep the administrator on the member page and re-enable the deletion control; success returns to the member directory.
+
+The current account and access interface also shows each account’s own unreserved balance under **My accounts**, opens the landing page through the Mellora splash, and uses only email/password sign-in and account creation. The deposit page shows an empty explanatory state until all required account details and payment context have been configured; the receipt uploader appears only after configuration.
 
 ### Deploy secure Supabase Edge Functions
 

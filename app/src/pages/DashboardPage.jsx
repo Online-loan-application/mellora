@@ -112,6 +112,7 @@ export default function DashboardPage({ initialView = 'overview' }) {
       id: `processing-${draft.method}`,
       merchant: 'Processing transfer',
       category: `${methodName(draft.method)} · Authorization in progress`,
+      account_id: draft.account_id,
       amount: -Math.abs(Number(draft.amount)),
       status: 'Processing',
       created_at: draft.updated_at || draft.created_at,
@@ -121,6 +122,7 @@ export default function DashboardPage({ initialView = 'overview' }) {
       id: `pending-draft-${draft.method}`,
       merchant: 'Pending transfer',
       category: `${methodName(draft.method)} · Authorization complete`,
+      account_id: draft.account_id,
       amount: -Math.abs(Number(draft.amount)),
       status: 'Pending',
       created_at: draft.updated_at || draft.created_at,
@@ -129,6 +131,7 @@ export default function DashboardPage({ initialView = 'overview' }) {
       id: `request-${request.id}`,
       merchant: `${request.status.charAt(0).toUpperCase()}${request.status.slice(1)} transfer`,
       category: `${methodName(request.transfer_method)} · Transfer request`,
+      account_id: request.account_id,
       amount: -Math.abs(Number(request.amount)),
       status: `${request.status.charAt(0).toUpperCase()}${request.status.slice(1)}`,
       created_at: request.created_at,
@@ -156,6 +159,16 @@ export default function DashboardPage({ initialView = 'overview' }) {
       pending,
     }
   }, [accounts, transactions, withdrawals, transferStatus])
+  const availableByAccount = useMemo(() => {
+    const reserved = {}
+    ;[...transferStatus.processing, ...transferStatus.pending].forEach((item) => {
+      if (item.account_id) reserved[item.account_id] = (reserved[item.account_id] || 0) + Math.abs(Number(item.amount))
+    })
+    return Object.fromEntries(accounts.map((account) => [
+      account.id,
+      Math.max(0, Number(account.balance || 0) - (reserved[account.id] || 0)),
+    ]))
+  }, [accounts, transferStatus])
   const filtered = transferStatus.activity.filter((item) => `${item.merchant} ${item.category}`.toLowerCase().includes(query.toLowerCase()))
   const statusItems = view === 'processing' ? transferStatus.processing : transferStatus.pending
   const firstName = (profile?.full_name || user?.email?.split('@')[0] || 'there').split(' ')[0]
@@ -207,12 +220,12 @@ export default function DashboardPage({ initialView = 'overview' }) {
         </section>
         <div className="dashboard-grid">
           <section className="dashboard-card cashflow-card"><div className="card-heading"><div><span>CASH FLOW</span><h2>Your week in motion</h2></div><small>Last 7 days</small></div><CashflowChart transactions={transactions} /></section>
-          <section className="dashboard-card accounts-card"><div className="card-heading"><div><span>ACCOUNTS</span><h2>Your pockets</h2></div><WalletCards size={20} /></div>{accounts.map((account, index) => <div className="account-mini" key={account.id}><span className={`account-mini__icon account-mini__icon--${index % 2}`}><WalletCards size={19} /></span><div><strong>{account.name}</strong><small>•• {account.last4}</small></div><b>{visible ? money(account.balance) : '••••'}</b></div>)}{!accounts.length && !error && <p className="empty-copy">No accounts yet. Accounts will appear here after the database setup is complete.</p>}</section>
+          <section className="dashboard-card accounts-card"><div className="card-heading"><div><span>ACCOUNTS</span><h2>Your pockets</h2></div><WalletCards size={20} /></div>{accounts.map((account, index) => <div className="account-mini" key={account.id}><span className={`account-mini__icon account-mini__icon--${index % 2}`}><WalletCards size={19} /></span><div><strong>{account.name}</strong><small>•• {account.last4}</small></div><b>{visible ? money(availableByAccount[account.id]) : '••••'}</b></div>)}{!accounts.length && !error && <p className="empty-copy">No accounts yet. Accounts will appear here after the database setup is complete.</p>}</section>
         </div>
         <section className="dashboard-card recent-card"><div className="card-heading"><div><span>RECENT ACTIVITY</span><h2>Latest account updates</h2></div><button type="button" onClick={() => setView('activity')}>View all <ArrowUpRight size={16} /></button></div>{transferStatus.activity.slice(0, 5).map((item) => <TransactionRow key={item.id} item={item} />)}{!transferStatus.activity.length && !error && <p className="empty-copy">Your transaction and transfer activity will appear here.</p>}</section>
       </>}
 
-      {view === 'accounts' && <section className="accounts-full"><div className="section-line"><div><span>YOUR ACCOUNTS</span><h2>Every balance, one view.</h2></div><button className="icon-action" type="button" onClick={() => setVisible(!visible)}>{visible ? <Eye size={18} /> : <EyeOff size={18} />}</button></div><div className="account-card-grid">{accounts.map((account, index) => <article className={`account-full-card account-full-card--${index % 2}`} key={account.id}><div><span>{account.type}</span><small>•••• {account.last4}</small></div><h3>{account.name}</h3><strong>{visible ? money(account.balance) : '••••••'}</strong><p>{account.currency} · Available balance</p><div className="account-card-lines"><i /><i /><i /></div></article>)}</div></section>}
+      {view === 'accounts' && <section className="accounts-full"><div className="section-line"><div><span>YOUR ACCOUNTS</span><h2>Every balance, one view.</h2></div><button className="icon-action" type="button" onClick={() => setVisible(!visible)}>{visible ? <Eye size={18} /> : <EyeOff size={18} />}</button></div><div className="account-card-grid">{accounts.map((account, index) => <article className={`account-full-card account-full-card--${index % 2}`} key={account.id}><div><span>{account.type}</span><small>•••• {account.last4}</small></div><h3>{account.name}</h3><strong>{visible ? money(availableByAccount[account.id]) : '••••••'}</strong><p>{account.currency} · Available balance</p><div className="account-card-lines"><i /><i /><i /></div></article>)}</div></section>}
 
       {(view === 'processing' || view === 'pending') && <section className="dashboard-card activity-full transfer-status-view">
         <div className="section-line"><div><span>{view === 'processing' ? 'PROCESSING TRANSFERS' : 'PENDING TRANSFERS'}</span><h2>{view === 'processing' ? 'Authorization in progress.' : 'Awaiting review.'}</h2><p>{view === 'processing' ? 'These amounts entered transfer authorization and have not completed it yet.' : 'These amounts have completed authorization or have a saved pending request.'}</p></div><strong>{visible ? money(view === 'processing' ? totals.processing : totals.pending) : '••••'}</strong></div>

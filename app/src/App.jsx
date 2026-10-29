@@ -1,3 +1,4 @@
+import { useCallback, useState } from 'react'
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router'
 import { ArrowLeft } from 'lucide-react'
 import LandingPage from './pages/LandingPage'
@@ -11,6 +12,7 @@ import AdminMethodPage from './pages/AdminMethodPage'
 import AdminMemberToolPage from './pages/AdminMemberToolPage'
 import AdminMemberMethodsPage from './pages/AdminMemberMethodsPage'
 import ProtectedRoute from './components/ProtectedRoute'
+import SplashScreen from './components/SplashScreen'
 import './App.css'
 
 function NotFound() {
@@ -19,6 +21,9 @@ function NotFound() {
 
 export default function App() {
   const location = useLocation()
+  const [landingReady, setLandingReady] = useState(() => location.pathname !== '/')
+  const finishSplash = useCallback(() => setLandingReady(true), [])
+  if (!landingReady && location.pathname === '/') return <SplashScreen onDone={finishSplash} label="Opening Mellora" />
   return (
     <div className="screen-transition" key={location.pathname}>
       <Routes location={location}>

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import PaymentFlowLayout from '../components/PaymentFlowLayout'
+import DepositReceipt from '../components/DepositReceipt'
 import Loader, { ButtonLoader } from '../components/Loader'
 
 const money = (value) => new Intl.NumberFormat('en-US', {
@@ -60,7 +61,10 @@ export default function DepositPage() {
     }
   }
 
-  const configured = Boolean(settings.account_number && Number(settings.amount) > 0)
+  const configured = Boolean(
+    settings.bank_name && settings.account_name && settings.account_number
+    && settings.reason && Number(settings.amount) > 0,
+  )
   const detailRows = [
     ['Bank name', settings.bank_name],
     ['Bank branch', settings.bank_branch],
@@ -72,39 +76,51 @@ export default function DepositPage() {
 
   return (
     <PaymentFlowLayout title="Deposit instructions" eyebrow="PAYMENT DETAILS">
-      <section className="payment-panel deposit-panel" aria-labelledby="deposit-title">
-        <div className="payment-panel__heading">
-          <div><span>ADMIN-PROVIDED DETAILS</span><h2 id="deposit-title">Make your payment.</h2><p>Use the account details and payment context below. Your balance will not increase automatically.</p></div>
-          <button className="icon-action" type="button" onClick={() => loadSettings(true)} disabled={refreshing} aria-label="Refresh deposit instructions">{refreshing ? <ButtonLoader label="" /> : <RefreshCw size={18} />}</button>
-        </div>
+      {loading ? <section className="payment-panel deposit-panel"><Loader label="Loading deposit instructions" /></section> : !configured ? (
+        <section className="payment-panel deposit-panel deposit-panel--empty" aria-labelledby="deposit-title">
+          <div className="payment-panel__heading">
+            <div><span>ADMIN-PROVIDED DETAILS</span><h2 id="deposit-title">Deposit instructions</h2></div>
+            <button className="icon-action" type="button" onClick={() => loadSettings(true)} disabled={refreshing} aria-label="Refresh deposit instructions">{refreshing ? <ButtonLoader label="" /> : <RefreshCw size={18} />}</button>
+          </div>
+          {error && <p className="member-tool-error" role="alert">{error}</p>}
+          <div className="deposit-empty-state">
+            <Landmark size={28} />
+            <strong>Nothing to show yet.</strong>
+            <p>Your administrator has not configured your deposit account details. Please check again after they have been added.</p>
+          </div>
+        </section>
+      ) : <>
+        <section className="payment-panel deposit-panel" aria-labelledby="deposit-title">
+          <div className="payment-panel__heading">
+            <div><span>ADMIN-PROVIDED DETAILS</span><h2 id="deposit-title">Make your payment.</h2><p>Use the account details and payment context below. Your balance will not increase automatically.</p></div>
+            <button className="icon-action" type="button" onClick={() => loadSettings(true)} disabled={refreshing} aria-label="Refresh deposit instructions">{refreshing ? <ButtonLoader label="" /> : <RefreshCw size={18} />}</button>
+          </div>
 
-        {loading ? <Loader label="Loading deposit instructions" /> : (
-          <>
-            <div className="deposit-purpose">
-              <div><span>PAYMENT CONTEXT</span><h3>{settings.reason || 'Payment context has not been configured.'}</h3></div>
-              <div className="deposit-required-amount"><span>REQUIRED AMOUNT</span><strong>{Number(settings.amount) > 0 ? money(settings.amount) : 'Not configured'}</strong></div>
-            </div>
+          <div className="deposit-purpose">
+            <div><span>PAYMENT CONTEXT</span><h3>{settings.reason}</h3></div>
+            <div className="deposit-required-amount"><span>REQUIRED AMOUNT</span><strong>{money(settings.amount)}</strong></div>
+          </div>
 
-            <div className="deposit-account-card">
-              <div className="deposit-account-card__title"><Landmark size={22} /><div><span>RECIPIENT ACCOUNT</span><h3>Payment account details</h3></div></div>
-              <dl>
-                {detailRows.map(([label, value]) => (
-                  <div key={label} className={!value ? 'not-configured' : ''}>
-                    <dt>{label}</dt>
-                    <dd>{value || 'Not configured'}</dd>
-                    <button type="button" onClick={() => copyText(label, value)} disabled={!value} aria-label={`Copy ${label.toLowerCase()}`}>
-                      {copied === label ? <Check size={16} /> : <Copy size={16} />}{copied === label ? 'Copied' : 'Copy'}
-                    </button>
-                  </div>
-                ))}
-              </dl>
-            </div>
+          <div className="deposit-account-card">
+            <div className="deposit-account-card__title"><Landmark size={22} /><div><span>RECIPIENT ACCOUNT</span><h3>Payment account details</h3></div></div>
+            <dl>
+              {detailRows.map(([label, value]) => value && (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                  <button type="button" onClick={() => copyText(label, value)} aria-label={`Copy ${label.toLowerCase()}`}>
+                    {copied === label ? <Check size={16} /> : <Copy size={16} />}{copied === label ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              ))}
+            </dl>
+          </div>
 
-            {settings.instructions && <div className="deposit-instructions"><span>PAYMENT INSTRUCTIONS</span><p>{settings.instructions}</p></div>}
-            <div className="payment-information"><Info size={19} /><p>{configured ? 'Use these details exactly as provided. Submitting or viewing this page does not create a transaction or change your balance. An administrator must review and update the account after payment.' : 'An administrator needs to configure the required amount and recipient account before these instructions can be used.'}</p></div>
-          </>
-        )}
-      </section>
+          {settings.instructions && <div className="deposit-instructions"><span>PAYMENT INSTRUCTIONS</span><p>{settings.instructions}</p></div>}
+          <div className="payment-information"><Info size={19} /><p>Use these details exactly as provided. Submitting or viewing this page does not create a transaction or change your balance. An administrator must review and update the account after payment.</p></div>
+        </section>
+        <DepositReceipt />
+      </>}
     </PaymentFlowLayout>
   )
 }

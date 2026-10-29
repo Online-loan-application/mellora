@@ -10,6 +10,8 @@ const dateTime = (value) => new Intl.DateTimeFormat('en-US', { month: 'short', d
 const emptyDeposit = { bank_name: '', bank_branch: '', account_name: '', account_number: '', routing_number: '', account_type: '', amount: '', reason: '', instructions: '' }
 const activityLabels = {
   deposit_clicked: 'Clicked Deposit',
+  deposit_receipt_uploaded: 'Uploaded a payment receipt',
+  deposit_receipt_confirmed: 'Payment receipt confirmed',
   withdrawal_started: 'Started a transfer',
   withdrawal_method_selected: 'Selected a transfer method',
   withdrawal_details_saved: 'Saved recipient account details',

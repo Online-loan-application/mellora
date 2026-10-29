@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router'
 import AppShell from '../components/AppShell'
 import Loader, { ButtonLoader } from '../components/Loader'
 import SetupNotice from '../components/SetupNotice'
+import ReceiptManager from '../components/ReceiptManager'
 import { BalanceManager, DepositSettings, MemberActivity, NotificationManager } from '../components/AdminMemberTools'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
@@ -60,7 +61,7 @@ export default function AdminMemberToolPage({ tool }) {
       <Link className="payment-back" to={`/admin/members/${userId}`}><ArrowLeft size={17} />Back to {member.full_name}</Link>
       {error && <SetupNotice message={error} />}
       <div className="member-tool-page">
-        {tool === 'deposit' && <DepositSettings memberId={userId} adminId={admin.id} value={data} onSaved={setData} />}
+        {tool === 'deposit' && <><DepositSettings memberId={userId} adminId={admin.id} value={data} onSaved={setData} /><ReceiptManager memberId={userId} adminId={admin.id} memberName={member.full_name} /></>}
         {tool === 'balances' && <BalanceManager accounts={data} onUpdated={(account, balance) => setData((items) => items.map((item) => item.id === account.id ? { ...item, balance } : item))} />}
         {tool === 'notifications' && <NotificationManager member={member} adminId={admin.id} notifications={data} onSent={(payload) => setData((items) => [{ ...payload, id: `local-${Date.now()}`, created_at: new Date().toISOString(), read_at: null }, ...items])} />}
         {tool === 'activity' && <MemberActivity activities={data} />}

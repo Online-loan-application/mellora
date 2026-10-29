@@ -75,10 +75,6 @@ export function AuthProvider({ children }) {
         emailRedirectTo: `${window.location.origin}/#/auth/callback`,
       },
     }),
-    sendMagicLink: (email) => supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${window.location.origin}/#/auth/callback` },
-    }),
     signOut: () => supabase.auth.signOut({ scope: 'local' }),
   }), [session, profile, loading, profileError, loadProfile])
 
