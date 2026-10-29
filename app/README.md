@@ -156,6 +156,21 @@ Next, run `supabase/resume-transfer-drafts.sql` once. This update:
 - Keeps Bank, PayPal, USDT, Cash App, Wise, and Venmo progress independent. Entered serial-code values are never stored in the draft.
 - Removes a method's draft after successful pending-request submission so a new transfer can be started.
 
+Next, run `supabase/persistent-code-countdown.sql` once. This update:
+
+- Adds a nullable `next_code_available_at` timestamp to each member + withdrawal-method draft.
+- Skips every paid code page and opens only the first unpaid code, using both saved draft confirmations and Supabase's paid-code records.
+- Shows the Mellora splash after a successful code, then a 30-minute countdown before codes 2, 3, and 4. The fourth code goes directly to final pending-request submission without another countdown.
+- Restores the remaining delay after refresh, navigation, or closing and reopening the browser; routine draft updates preserve the original unlock timestamp instead of starting a new 30 minutes.
+- Keeps countdowns independent across Bank, PayPal, USDT, Cash App, Wise, and Venmo. Entered serial-code values are still never stored.
+
+Next, run `supabase/member-transfer-status-notifications.sql` once. This update:
+
+- Adds Processing transfers and Pending transfers to the member overview, sidebar, dedicated status views, and recent activity. Processing starts when a new transfer draft enters authorization; it moves to Pending when all confirmations are complete. Saved pending requests are included without double-counting a matching authorized draft.
+- Expands the allowed member-activity types for method selection, draft resumption, processing, and pending transitions.
+- Creates a notification for every recorded member activity, including direct database activity created by transfer submission and authorization verification. Transfer, balance, admin-message, and general activity notifications retain their own types.
+- Adds dismissible toast feedback for member authentication, dashboard refreshes, recipient saves, transfer status changes, deposit copying, notification updates, and errors.
+
 For a fresh installation, the complete `supabase/schema.sql` already includes these updates. Existing databases should run only the targeted migrations.
 
 ### Deploy secure Supabase Edge Functions

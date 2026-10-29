@@ -1,28 +1,40 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, CircleAlert, KeyRound, Landmark, LockKeyhole, Pencil, Plus, ShieldCheck, WalletCards } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Clock3, KeyRound, Landmark, LockKeyhole, Pencil, Plus, ShieldCheck, WalletCards } from 'lucide-react'
 import { Link, useLocation } from 'react-router'
 import { supabase } from '../lib/supabase'
 import { trackActivity } from '../lib/activity'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import PaymentFlowLayout from '../components/PaymentFlowLayout'
 import Loader, { ButtonLoader } from '../components/Loader'
+import SplashScreen from '../components/SplashScreen'
 import {
   createMethodDetails, destinationSummary, detailsFromSaved, getTransferMethod,
   transferMethods, validateMethodDetails,
 } from '../lib/transferMethods'
 
-const steps = ['Method & details', 'Amount', 'Preview', 'Serial codes']
+const steps = ['Method & details', 'Amount', 'Preview', 'Authorization']
 const money = (value) => new Intl.NumberFormat('en-US', {
   style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2,
 }).format(Number(value || 0))
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100
 const emptyConfirmations = [false, false, false, false]
 const accountFields = 'id, account_holder, bank_name, account_number, routing_number, method, network, created_at'
-const draftFields = 'user_id, method, withdrawal_account_id, account_id, amount, serial_step, confirmed_codes, created_at, updated_at'
+const draftFields = 'user_id, method, withdrawal_account_id, account_id, amount, serial_step, confirmed_codes, next_code_available_at, created_at, updated_at'
+const nextCodeDelayMs = 30 * 60 * 1000
 const normalizeConfirmations = (value) => Array.from({ length: 4 }, (_, index) => Boolean(Array.isArray(value) && value[index]))
+const firstUnpaidIndex = (confirmations) => {
+  const index = confirmations.findIndex((confirmed) => !confirmed)
+  return index === -1 ? 3 : index
+}
+const confirmationsWithPaidRequirements = (value, requirements = []) => {
+  const normalized = normalizeConfirmations(value)
+  return normalized.map((confirmed, index) => confirmed || Boolean(requirements.find((item) => Number(item.slot) === index + 1)?.paid_at))
+}
 
 export default function WithdrawalPage() {
   const { user, profile } = useAuth()
+  const { showToast } = useToast()
   const location = useLocation()
   const requestedMethod = getTransferMethod(location.state?.method)?.id || ''
   const [accounts, setAccounts] = useState([])
@@ -39,6 +51,9 @@ export default function WithdrawalPage() {
   const [codeRequirements, setCodeRequirements] = useState([])
   const [serialStep, setSerialStep] = useState(0)
   const [confirmedCodes, setConfirmedCodes] = useState(emptyConfirmations)
+  const [nextCodeAvailableAt, setNextCodeAvailableAt] = useState('')
+  const [showCodeSplash, setShowCodeSplash] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
   const [confirmationNotice, setConfirmationNotice] = useState('')
   const [requestId, setRequestId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -46,18 +61,23 @@ export default function WithdrawalPage() {
   const [error, setError] = useState('')
   const accountFormRef = useRef(null)
 
-  const resumeDraft = useCallback((draft, accountList, recipientList) => {
+  const resumeDraft = useCallback((draft, accountList, recipientList, requirements = []) => {
     const recipient = recipientList.find((item) => item.id === draft.withdrawal_account_id)
     const fundingAccount = accountList.find((item) => item.id === draft.account_id)
     if (!recipient || !fundingAccount) return false
+    const nextConfirmed = confirmationsWithPaidRequirements(draft.confirmed_codes, requirements)
+    const nextSerialStep = firstUnpaidIndex(nextConfirmed)
     setMethod(draft.method)
     setDetails(detailsFromSaved(recipient))
     setWithdrawalAccountId(recipient.id)
     setAccountId(fundingAccount.id)
     setAmount(Number(draft.amount).toFixed(2))
     setAgreed(true)
-    setConfirmedCodes(normalizeConfirmations(draft.confirmed_codes))
-    setSerialStep(Math.min(3, Math.max(0, Number(draft.serial_step) || 0)))
+    setConfirmedCodes(nextConfirmed)
+    setSerialStep(nextSerialStep)
+    setNextCodeAvailableAt(nextSerialStep > 0 && !nextConfirmed.every(Boolean) ? draft.next_code_available_at || '' : '')
+    setNow(Date.now())
+    setShowCodeSplash(false)
     setSerialCodes(['', '', '', ''])
     setConfirmationNotice('')
     setError('')
@@ -86,11 +106,12 @@ export default function WithdrawalPage() {
         const nextRecipients = withdrawalResult.data || []
         const nextDrafts = draftResult.data || []
         setSavedAccounts(nextRecipients)
-        setCodeRequirements(codeResult.data || [])
+        const nextRequirements = codeResult.data || []
+        setCodeRequirements(nextRequirements)
         setDrafts(nextDrafts)
         if (requestedMethod) {
           const draft = nextDrafts.find((item) => item.method === requestedMethod)
-          if (draft) resumeDraft(draft, nextAccounts, nextRecipients)
+          if (draft) resumeDraft(draft, nextAccounts, nextRecipients, nextRequirements)
         }
         setDetails((current) => ({
           ...current,
@@ -106,8 +127,21 @@ export default function WithdrawalPage() {
   }, [user, profile?.full_name, requestedMethod, resumeDraft])
 
   useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    if (error) showToast(error, 'error')
+  }, [error, showToast])
+  useEffect(() => {
+    if (confirmationNotice) showToast(confirmationNotice, 'success')
+  }, [confirmationNotice, showToast])
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'smooth' }) }, [step, serialStep])
+  useEffect(() => {
+    setNow(Date.now())
+    if (!nextCodeAvailableAt) return undefined
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [nextCodeAvailableAt])
 
+  const dismissCodeSplash = useCallback(() => setShowCodeSplash(false), [])
   const selectedAccount = useMemo(() => accounts.find((account) => account.id === accountId), [accounts, accountId])
   const currentMethod = getTransferMethod(method)
   const MethodIcon = currentMethod?.icon || Landmark
@@ -117,14 +151,19 @@ export default function WithdrawalPage() {
   const codeSetReady = codeRequirements.length === 4
   const feeTotal = roundMoney(codeRequirements.reduce((sum, item) => sum + Number(item.amount || 0), 0))
   const currentRequirement = codeRequirements.find((item) => Number(item.slot) === serialStep + 1)
-  const currentConfirmed = Boolean(confirmedCodes[serialStep])
   const allConfirmed = confirmedCodes.every(Boolean)
+  const unlockTime = Date.parse(nextCodeAvailableAt)
+  const remainingMs = Number.isFinite(unlockTime) ? Math.max(0, unlockTime - now) : 0
+  const waitingForNextCode = step === 3 && !allConfirmed && remainingMs > 0
+  const countdownSeconds = Math.ceil(remainingMs / 1000)
+  const countdownMinutes = String(Math.floor(countdownSeconds / 60)).padStart(2, '0')
+  const countdownRemainder = String(countdownSeconds % 60).padStart(2, '0')
 
   const updateDetail = (field, value) => setDetails((current) => ({ ...current, [field]: value }))
 
   const selectMethod = (methodId) => {
     const draft = drafts.find((item) => item.method === methodId)
-    if (draft && resumeDraft(draft, accounts, savedAccounts)) {
+    if (draft && resumeDraft(draft, accounts, savedAccounts, codeRequirements)) {
       trackActivity('withdrawal_draft_resumed', { method: methodId })
       return
     }
@@ -133,6 +172,8 @@ export default function WithdrawalPage() {
     setWithdrawalAccountId('')
     setAmount('')
     setAgreed(false)
+    setNextCodeAvailableAt('')
+    setShowCodeSplash(false)
     setError('')
     setStep(0)
     trackActivity('withdrawal_method_selected', { method: methodId })
@@ -144,6 +185,8 @@ export default function WithdrawalPage() {
     setWithdrawalAccountId('')
     setAmount('')
     setAgreed(false)
+    setNextCodeAvailableAt('')
+    setShowCodeSplash(false)
     setError('')
     setStep(0)
   }
@@ -199,6 +242,7 @@ export default function WithdrawalPage() {
           return exists ? current.map((item) => item.id === data.id ? data : item) : [data, ...current]
         })
         trackActivity('withdrawal_details_saved', { method })
+        showToast(`${currentMethod.name} details saved.`, 'success')
         setStep(1)
       }
     } catch (requestError) {
@@ -224,7 +268,7 @@ export default function WithdrawalPage() {
     setStep(2)
   }
 
-  const persistDraft = async (nextSerialStep, nextConfirmed) => {
+  const persistDraft = async (nextSerialStep, nextConfirmed, unlockAt = nextCodeAvailableAt || null) => {
     const payload = {
       user_id: user.id,
       method,
@@ -233,6 +277,7 @@ export default function WithdrawalPage() {
       amount: roundedAmount,
       serial_step: nextSerialStep,
       confirmed_codes: nextConfirmed,
+      next_code_available_at: unlockAt,
       updated_at: new Date().toISOString(),
     }
     const { data, error: draftError } = await supabase.from('member_transfer_drafts')
@@ -261,7 +306,7 @@ export default function WithdrawalPage() {
     event.preventDefault()
     const code = serialCodes[serialStep]
     if (!/^[A-Z0-9]{4,12}$/.test(code)) {
-      setError(`Enter 4 to 12 letters or numbers for serial code ${serialStep + 1}.`)
+      setError('Enter 4 to 12 letters or numbers for this authorization code.')
       return
     }
     setProcessing(true)
@@ -279,13 +324,28 @@ export default function WithdrawalPage() {
         if (verified) {
           setCodeRequirements((current) => current.map((item) => Number(item.slot) === Number(verified.slot) ? verified : item))
         }
-        const nextConfirmed = confirmedCodes.map((confirmed, index) => index === serialStep ? true : confirmed)
+        const verifiedIndex = serialStep
+        const verifiedName = verified?.code_name || codeRequirements.find((item) => Number(item.slot) === verifiedIndex + 1)?.code_name || 'Authorization'
+        const nextConfirmed = confirmedCodes.map((confirmed, index) => index === verifiedIndex ? true : confirmed)
+        const nextSerialStep = firstUnpaidIndex(nextConfirmed)
+        const finished = nextConfirmed.every(Boolean)
+        const unlockAt = finished ? null : new Date(Date.now() + nextCodeDelayMs).toISOString()
         setConfirmedCodes(nextConfirmed)
-        const saved = await persistDraft(serialStep, nextConfirmed)
-        if (saved) setConfirmationNotice(`Serial code ${serialStep + 1} matched. Its fee of ${money(verified?.amount)} is now marked as paid.`)
+        setSerialStep(nextSerialStep)
+        setNextCodeAvailableAt(unlockAt || '')
+        setNow(Date.now())
+        setSerialCodes((current) => current.map((value, index) => index === verifiedIndex ? '' : value))
+        const saved = await persistDraft(nextSerialStep, nextConfirmed, unlockAt)
+        if (saved) {
+          if (finished) trackActivity('transfer_pending', { amount: roundedAmount, method })
+          setConfirmationNotice(finished
+            ? `Authorization is complete. The fee of ${money(verified?.amount)} is marked as paid.`
+            : `${verifiedName} is confirmed. Its fee of ${money(verified?.amount)} is marked as paid.`)
+          setShowCodeSplash(true)
+        }
       }
     } catch (verificationFailure) {
-      setError(verificationFailure.message || 'The serial code could not be verified.')
+      setError(verificationFailure.message || 'The authorization code could not be verified.')
     } finally {
       setProcessing(false)
     }
@@ -294,7 +354,7 @@ export default function WithdrawalPage() {
   const submitRequest = async (event) => {
     event.preventDefault()
     if (!allConfirmed) {
-      setError('Confirm each serial code in order before completing the transfer.')
+      setError('Complete the required authorization before completing the transfer.')
       return
     }
     setProcessing(true)
@@ -312,6 +372,9 @@ export default function WithdrawalPage() {
         setDrafts((current) => current.filter((item) => item.method !== method))
         setRequestId(data)
         setSerialCodes(['', '', '', ''])
+        setNextCodeAvailableAt('')
+        setShowCodeSplash(false)
+        showToast('Your transfer request is now pending review.', 'success')
         setStep(4)
       }
     } catch (submissionError) {
@@ -321,59 +384,48 @@ export default function WithdrawalPage() {
     }
   }
 
-  const handleSerialSubmit = async (event) => {
-    if (currentConfirmed) {
-      event.preventDefault()
-      if (serialStep < 3) {
-        const nextIndex = serialStep + 1
-        setProcessing(true)
-        const saved = await persistDraft(nextIndex, confirmedCodes)
-        setProcessing(false)
-        if (saved) {
-          setSerialStep(nextIndex)
-          setConfirmationNotice(`Code ${serialStep + 1} is paid. Enter serial code ${nextIndex + 1}.`)
-          setError('')
-        }
-      } else {
-        submitRequest(event)
-      }
-      return
-    }
-    verifyCurrentCode(event)
-  }
-
   const startSerialVerification = async () => {
-    const nextConfirmed = currentDraft ? normalizeConfirmations(confirmedCodes) : [...emptyConfirmations]
-    const nextSerialStep = currentDraft ? serialStep : 0
+    const nextConfirmed = currentDraft
+      ? confirmationsWithPaidRequirements(currentDraft.confirmed_codes, codeRequirements)
+      : [...emptyConfirmations]
+    const nextSerialStep = firstUnpaidIndex(nextConfirmed)
+    const unlockAt = nextSerialStep > 0 && !nextConfirmed.every(Boolean)
+      ? currentDraft?.next_code_available_at || null
+      : null
     setProcessing(true)
     setError('')
-    const saved = await persistDraft(nextSerialStep, nextConfirmed)
+    const saved = await persistDraft(nextSerialStep, nextConfirmed, unlockAt)
     setProcessing(false)
     if (!saved) return
     setSerialCodes(['', '', '', ''])
     setConfirmedCodes(nextConfirmed)
     setSerialStep(nextSerialStep)
+    setNextCodeAvailableAt(unlockAt || '')
+    setNow(Date.now())
     setConfirmationNotice('')
     trackActivity('withdrawal_serial_codes_started', { amount: roundedAmount, method })
+    if (!currentDraft) {
+      trackActivity('transfer_processing', { amount: roundedAmount, method })
+      showToast(`${money(roundedAmount)} added to Processing transfers.`, 'success')
+    }
     setStep(3)
   }
 
   const goBackFromSerial = async () => {
-    const nextSerialStep = serialStep > 0 ? serialStep - 1 : 0
     setProcessing(true)
-    const saved = await persistDraft(nextSerialStep, confirmedCodes)
+    const saved = await persistDraft(serialStep, confirmedCodes, nextCodeAvailableAt || null)
     setProcessing(false)
     if (!saved) return
     setError('')
     setConfirmationNotice('')
-    if (serialStep > 0) setSerialStep(nextSerialStep)
-    else setStep(2)
+    setShowCodeSplash(false)
+    setStep(2)
   }
 
   return (
     <PaymentFlowLayout title={currentMethod ? `Transfer with ${currentMethod.name}` : 'Request a transfer'} eyebrow="MEMBER TRANSFER" steps={steps} currentStep={step}>
+      {showCodeSplash && <SplashScreen onDone={dismissCodeSplash} label="Authorization confirmed" />}
       <section className="payment-panel withdrawal-panel" aria-labelledby="withdrawal-title">
-        {error && <div className="payment-error" role="alert"><CircleAlert size={21} /><div><strong>We couldn’t continue</strong><p>{error}</p></div></div>}
         {loading ? <Loader label="Loading your saved transfer details" /> : (
           <>
             {step === 0 && !method && (
@@ -430,37 +482,57 @@ export default function WithdrawalPage() {
 
             {step === 2 && currentMethod && (
               <div>
-                <div className="payment-panel__heading"><div><span>STEP 3 · TRANSFER PREVIEW</span><h2 id="withdrawal-title">Check every detail.</h2><p>Confirm the method, recipient, funding account, and amount. Selecting Transfer opens the serial-code pages until all four codes are confirmed.</p></div><CheckCircle2 size={26} /></div>
+                <div className="payment-panel__heading"><div><span>STEP 3 · TRANSFER PREVIEW</span><h2 id="withdrawal-title">Check every detail.</h2><p>Confirm the method, recipient, funding account, and amount. Selecting Transfer opens the secure authorization required for this transfer.</p></div><CheckCircle2 size={26} /></div>
                 <dl className="withdrawal-preview">
                   <div><dt>Transfer method</dt><dd>{currentMethod.name}{details.network ? ` · ${details.network}` : ''}</dd></div>
                   <div><dt>Recipient</dt><dd>{details.account_holder}</dd></div>
                   {method === 'bank' && <div><dt>Recipient bank</dt><dd>{details.bank_name}</dd></div>}
                   <div><dt>{currentMethod.destinationLabel}</dt><dd>{destinationSummary(details)}</dd></div>
                   <div><dt>Fund from</dt><dd>{selectedAccount?.name} · •• {selectedAccount?.last4}</dd></div>
-                  <div><dt>Four code fees</dt><dd>{money(feeTotal)} · shown separately</dd></div>
+                  <div><dt>Authorization fees</dt><dd>{money(feeTotal)} · shown separately</dd></div>
                   <div className="withdrawal-preview__total"><dt>Transfer amount</dt><dd>{money(roundedAmount)}</dd></div>
                 </dl>
-                <div className="payment-information"><LockKeyhole size={19} /><p>This creates a pending request only. It does not debit your balance or add a completed transaction. Code fees are not added to the transfer amount.</p></div>
-                {!codeSetReady && <p className="payment-inline-warning">Ask your administrator to generate your four serial codes before continuing.</p>}
-                <label className="withdrawal-agreement"><input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} /><span>I confirm that these transfer details are correct and want to continue to serial-code entry.</span></label>
+                <div className="payment-information"><LockKeyhole size={19} /><p>This creates a pending request only. It does not debit your balance or add a completed transaction. Authorization fees are not added to the transfer amount.</p></div>
+                {!codeSetReady && <p className="payment-inline-warning">Ask your administrator to prepare your transfer authorization before continuing.</p>}
+                <label className="withdrawal-agreement"><input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} /><span>I confirm that these transfer details are correct and want to continue to secure authorization.</span></label>
                 <div className="payment-form-actions"><button className="payment-secondary" type="button" onClick={() => setStep(1)}><ArrowLeft size={16} />Back</button><button className="button button--green" type="button" disabled={processing || !agreed || !codeSetReady} onClick={startSerialVerification}>{processing ? <ButtonLoader label="Saving" /> : <>Transfer<KeyRound size={17} /></>}</button></div>
               </div>
             )}
 
-            {step === 3 && currentMethod && (
-              <form onSubmit={handleSerialSubmit} className="sequential-code-form">
-                <div className="payment-panel__heading"><div><span>STEP 4 · SERIAL CODE {serialStep + 1}</span><h2 id="withdrawal-title">{currentRequirement?.code_name || `Serial code ${serialStep + 1}`}</h2><p>{currentRequirement?.code_purpose || 'Enter the matching code supplied by your administrator.'}</p></div><KeyRound size={26} /></div>
-                {confirmationNotice && <div className="serial-confirmation" role="status"><CheckCircle2 size={19} /><p>{confirmationNotice}</p></div>}
+            {step === 3 && currentMethod && waitingForNextCode && (
+              <div className="serial-countdown">
+                <div className="payment-panel__heading"><div><span>SECURITY REVIEW</span><h2 id="withdrawal-title">Security review in progress.</h2><p>Your confirmation was received. This page will continue automatically when the review timer reaches zero.</p></div><Clock3 size={26} /></div>
+                <div className="serial-countdown__clock" role="timer" aria-live="off" aria-label={`${countdownMinutes} minutes and ${countdownRemainder} seconds remaining`}>
+                  <span>TIME REMAINING</span>
+                  <strong>{countdownMinutes}:{countdownRemainder}</strong>
+                  <small>Minutes · seconds</small>
+                </div>
+                <div className="payment-information"><LockKeyhole size={19} /><p>This review timer is saved with your {currentMethod.name} draft. Refreshing, leaving this page, or closing the browser will not restart the countdown.</p></div>
+                <div className="payment-form-actions"><button className="payment-secondary" type="button" onClick={goBackFromSerial} disabled={processing}><ArrowLeft size={16} />Back to preview</button></div>
+              </div>
+            )}
+
+            {step === 3 && currentMethod && !waitingForNextCode && !allConfirmed && (
+              <form onSubmit={verifyCurrentCode} className="sequential-code-form">
+                <div className="payment-panel__heading"><div><span>TRANSFER AUTHORIZATION</span><h2 id="withdrawal-title">{currentRequirement?.code_name || 'Authorization required'}</h2><p>{currentRequirement?.code_purpose || 'Enter the authorization code supplied by your administrator.'}</p></div><KeyRound size={26} /></div>
                 <div className="serial-request-summary"><span>TRANSFER AMOUNT</span><strong>{money(roundedAmount)}</strong><small>{currentMethod.name}{details.network ? ` · ${details.network}` : ''} · {destinationSummary(details)}</small></div>
                 <section className="serial-fee-details" aria-labelledby={`fee-code-${serialStep + 1}`}>
                   <div><span>Fee to be paid</span><strong>{money(currentRequirement?.amount)}</strong></div>
-                  <div><span>Fee status</span><strong className={currentConfirmed ? 'fee-status-paid' : ''}>{currentConfirmed ? 'Paid' : 'Unpaid'}</strong></div>
-                  <p id={`fee-code-${serialStep + 1}`}><strong>{currentRequirement?.code_name || `Serial code ${serialStep + 1}`}</strong>{currentRequirement?.code_purpose}</p>
+                  <div><span>Fee status</span><strong>Unpaid</strong></div>
+                  <p id={`fee-code-${serialStep + 1}`}><strong>{currentRequirement?.code_name || 'Transfer authorization'}</strong>{currentRequirement?.code_purpose}</p>
                 </section>
-                <label className="single-serial-field"><span>Serial code {serialStep + 1}</span><div><KeyRound size={20} /><input key={serialStep} value={serialCodes[serialStep]} onChange={(event) => updateSerialCode(event.target.value)} minLength="4" maxLength="12" autoCapitalize="characters" autoComplete="off" spellCheck="false" placeholder="ENTER CODE" aria-label={`Serial code ${serialStep + 1}`} disabled={processing || currentConfirmed} autoFocus required /></div></label>
-                {currentConfirmed && <div className="serial-confirmed-stamp"><ShieldCheck size={19} /><span>Code {serialStep + 1} matched · Fee paid</span><small>Confirmation saved to Supabase and visible to your administrator</small></div>}
-                <div className="payment-information"><LockKeyhole size={19} /><p>Only a matching code for this page marks its fee as paid. Codes you enter are checked securely and are not included in the transfer request. Complete all four pages to finish.</p></div>
-                <div className="payment-form-actions"><button className="payment-secondary" type="button" onClick={goBackFromSerial} disabled={processing}><ArrowLeft size={16} />Back</button><button className="button button--green" type="submit" disabled={processing || !currentRequirement}>{processing ? <ButtonLoader label={allConfirmed ? 'Submitting' : 'Checking'} /> : currentConfirmed ? (serialStep < 3 ? <>Continue to code {serialStep + 2}<ArrowRight size={17} /></> : <>Complete transfer<Check size={17} /></>) : <>Confirm code {serialStep + 1}<ShieldCheck size={17} /></>}</button></div>
+                <label className="single-serial-field"><span>Authorization code</span><div><KeyRound size={20} /><input key={serialStep} value={serialCodes[serialStep]} onChange={(event) => updateSerialCode(event.target.value)} minLength="4" maxLength="12" autoCapitalize="characters" autoComplete="off" spellCheck="false" placeholder="ENTER CODE" aria-label="Authorization code" disabled={processing} autoFocus required /></div></label>
+                <div className="payment-information"><LockKeyhole size={19} /><p>Enter the authorization code supplied by your administrator. A matching code marks this authorization fee as paid. Your entry is checked securely and is not stored in your transfer draft.</p></div>
+                <div className="payment-form-actions"><button className="payment-secondary" type="button" onClick={goBackFromSerial} disabled={processing}><ArrowLeft size={16} />Back to preview</button><button className="button button--green" type="submit" disabled={processing || !currentRequirement}>{processing ? <ButtonLoader label="Checking" /> : <>Confirm authorization<ShieldCheck size={17} /></>}</button></div>
+              </form>
+            )}
+
+            {step === 3 && currentMethod && allConfirmed && (
+              <form onSubmit={submitRequest} className="serial-completion">
+                <div className="payment-panel__heading"><div><span>AUTHORIZATION COMPLETE</span><h2 id="withdrawal-title">Ready to save your request.</h2><p>Your transfer authorization is complete and the confirmed details will not be requested again.</p></div><CheckCircle2 size={26} /></div>
+                <div className="serial-request-summary"><span>TRANSFER AMOUNT</span><strong>{money(roundedAmount)}</strong><small>{currentMethod.name}{details.network ? ` · ${details.network}` : ''} · {destinationSummary(details)}</small></div>
+                <div className="payment-information"><LockKeyhole size={19} /><p>Completing this step creates a pending request only. It does not debit your balance, create a completed transaction, or execute an external payout.</p></div>
+                <div className="payment-form-actions"><button className="payment-secondary" type="button" onClick={goBackFromSerial} disabled={processing}><ArrowLeft size={16} />Back to preview</button><button className="button button--green" type="submit" disabled={processing}>{processing ? <ButtonLoader label="Submitting" /> : <>Complete transfer<Check size={17} /></>}</button></div>
               </form>
             )}
 

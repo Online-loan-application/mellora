@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { Check, Copy, Info, Landmark, RefreshCw } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import PaymentFlowLayout from '../components/PaymentFlowLayout'
 import Loader, { ButtonLoader } from '../components/Loader'
-import SetupNotice from '../components/SetupNotice'
 
 const money = (value) => new Intl.NumberFormat('en-US', {
   style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2,
@@ -17,6 +17,7 @@ const emptySettings = {
 
 export default function DepositPage() {
   const { user } = useAuth()
+  const { showToast } = useToast()
   const [settings, setSettings] = useState(emptySettings)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -43,12 +44,16 @@ export default function DepositPage() {
   }, [user])
 
   useEffect(() => { loadSettings() }, [loadSettings])
+  useEffect(() => {
+    if (error) showToast(error, 'error')
+  }, [error, showToast])
 
   const copyText = async (label, value) => {
     if (!value) return
     try {
       await navigator.clipboard.writeText(value)
       setCopied(label)
+      showToast(`${label} copied to your clipboard.`, 'success')
       window.setTimeout(() => setCopied(''), 1800)
     } catch {
       setError('Copying is unavailable in this browser. Select the account detail and copy it manually.')
@@ -73,7 +78,6 @@ export default function DepositPage() {
           <button className="icon-action" type="button" onClick={() => loadSettings(true)} disabled={refreshing} aria-label="Refresh deposit instructions">{refreshing ? <ButtonLoader label="" /> : <RefreshCw size={18} />}</button>
         </div>
 
-        {error && <SetupNotice message={error} />}
         {loading ? <Loader label="Loading deposit instructions" /> : (
           <>
             <div className="deposit-purpose">

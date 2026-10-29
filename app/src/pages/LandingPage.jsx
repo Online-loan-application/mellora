@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import { ArrowDown, ArrowRight, ArrowUpRight, Check, Eye, Fingerprint, LockKeyhole, Menu, Pause, Play, RotateCcw, ShieldCheck, Sparkles, X } from 'lucide-react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import SplashScreen from '../components/SplashScreen'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -55,36 +56,6 @@ function Wordmark({ inverse = false }) {
       <LogoMark inverse={inverse} />
       <span>mellora</span>
     </a>
-  )
-}
-
-function Splash({ onDone }) {
-  const [leaving, setLeaving] = useState(false)
-
-  useEffect(() => {
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (reduced) {
-      onDone()
-      return
-    }
-    const leaveTimer = window.setTimeout(() => setLeaving(true), 1080)
-    const doneTimer = window.setTimeout(onDone, 1500)
-    return () => {
-      window.clearTimeout(leaveTimer)
-      window.clearTimeout(doneTimer)
-    }
-  }, [onDone])
-
-  return (
-    <div className={`splash ${leaving ? 'splash--leaving' : ''}`} role="status" aria-label="Loading Mellora">
-      <div className="splash__halo" />
-      <div className="splash__brand">
-        <div className="splash__mark"><LogoMark inverse size={74} /></div>
-        <span className="splash__name">mellora</span>
-        <span className="splash__tagline">Money, made mellow.</span>
-      </div>
-      <div className="splash__progress"><span /></div>
-    </div>
   )
 }
 
@@ -296,7 +267,7 @@ function LandingPage() {
 
   return (
     <div ref={root} className={`site ${paused ? 'motion-paused' : ''}`} id="top">
-      {splash && <Splash onDone={handleSplashDone} />}
+      {splash && <SplashScreen onDone={handleSplashDone} />}
       <header className="site-header">
         <Wordmark inverse />
         <nav className="desktop-nav" aria-label="Main navigation">

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router'
-import { ArrowDownLeft, ArrowUpRight, LayoutDashboard, LogOut, Menu, ShieldCheck, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Clock3, LayoutDashboard, LoaderCircle, LogOut, Menu, ShieldCheck, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import Logo from './Logo'
 import { ButtonLoader } from './Loader'
@@ -21,6 +21,8 @@ export default function AppShell({ children, title, eyebrow, actions }) {
         { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
         { to: '/dashboard/deposit', label: 'Deposit', icon: ArrowDownLeft },
         { to: '/dashboard/withdraw', label: 'Transfer', icon: ArrowUpRight },
+        { to: '/dashboard/processing', label: 'Processing transfers', icon: LoaderCircle },
+        { to: '/dashboard/pending', label: 'Pending transfers', icon: Clock3 },
       ]
 
   useEffect(() => { setMenuOpen(false) }, [location.pathname])

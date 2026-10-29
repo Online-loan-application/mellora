@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bell, Check, CheckCheck, MailOpen, ShieldCheck, WalletCards, X } from 'lucide-react'
+import { ArrowUpRight, Bell, Check, CheckCheck, MailOpen, ShieldCheck, WalletCards, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useToast } from '../context/ToastContext'
 import { ButtonLoader } from './Loader'
 
 const notificationDate = (value) => new Intl.DateTimeFormat('en-US', {
@@ -8,6 +9,7 @@ const notificationDate = (value) => new Intl.DateTimeFormat('en-US', {
 }).format(new Date(value))
 
 export default function NotificationCenter({ notifications, setNotifications }) {
+  const { showToast } = useToast()
   const [open, setOpen] = useState(false)
   const [updating, setUpdating] = useState('')
   const [error, setError] = useState('')
@@ -16,6 +18,9 @@ export default function NotificationCenter({ notifications, setNotifications }) 
   const closeButton = useRef(null)
   const unread = notifications.filter((item) => !item.read_at)
 
+  useEffect(() => {
+    if (error) showToast(error, 'error')
+  }, [error, showToast])
   useEffect(() => {
     if (!open) return
     closeButton.current?.focus()
@@ -43,7 +48,10 @@ export default function NotificationCenter({ notifications, setNotifications }) 
     const readAt = new Date().toISOString()
     const { error: updateError } = await supabase.from('notifications').update({ read_at: readAt }).eq('id', item.id)
     if (updateError) setError(updateError.message)
-    else setNotifications((items) => items.map((entry) => entry.id === item.id ? { ...entry, read_at: readAt } : entry))
+    else {
+      setNotifications((items) => items.map((entry) => entry.id === item.id ? { ...entry, read_at: readAt } : entry))
+      showToast('Notification marked as read.', 'success')
+    }
     setUpdating('')
   }
 
@@ -55,7 +63,10 @@ export default function NotificationCenter({ notifications, setNotifications }) 
     const ids = unread.map((item) => item.id)
     const { error: updateError } = await supabase.from('notifications').update({ read_at: readAt }).in('id', ids)
     if (updateError) setError(updateError.message)
-    else setNotifications((items) => items.map((item) => ids.includes(item.id) ? { ...item, read_at: readAt } : item))
+    else {
+      setNotifications((items) => items.map((item) => ids.includes(item.id) ? { ...item, read_at: readAt } : item))
+      showToast('All notifications marked as read.', 'success')
+    }
     setUpdating('')
   }
 
@@ -79,10 +90,9 @@ export default function NotificationCenter({ notifications, setNotifications }) 
           <div><span>YOUR UPDATES</span><h2>Notifications</h2></div>
           <button type="button" ref={closeButton} onClick={() => { setOpen(false); trigger.current?.focus() }} aria-label="Close notifications"><X size={18} /></button>
         </div>
-        {error && <p className="notification-error" role="alert">{error}</p>}
         <div className="notification-list" aria-live="polite">
           {notifications.map((item) => <article className={`notification-item ${item.read_at ? '' : 'unread'}`} key={item.id}>
-            <span className="notification-item__icon">{item.type === 'balance' ? <WalletCards size={18} /> : <ShieldCheck size={18} />}</span>
+            <span className="notification-item__icon">{item.type === 'balance' ? <WalletCards size={18} /> : item.type === 'transfer' ? <ArrowUpRight size={18} /> : item.type === 'activity' ? <Bell size={18} /> : <ShieldCheck size={18} />}</span>
             <div>
               <div className="notification-item__title"><strong>{item.title}</strong>{!item.read_at && <span>NEW</span>}</div>
               <p>{item.message}</p>
@@ -92,7 +102,7 @@ export default function NotificationCenter({ notifications, setNotifications }) 
               {updating === item.id ? <ButtonLoader label="" /> : <Check size={16} />}
             </button>}
           </article>)}
-          {!notifications.length && <div className="notification-empty"><MailOpen size={28} /><strong>You’re all caught up.</strong><p>Balance updates and messages from Mellora will appear here.</p></div>}
+          {!notifications.length && <div className="notification-empty"><MailOpen size={28} /><strong>You’re all caught up.</strong><p>Balance updates, transfer activity, and messages from Mellora will appear here.</p></div>}
         </div>
         {notifications.length > 0 && <button className="notification-mark-all" type="button" onClick={markAllRead} disabled={!unread.length || updating !== ''}>
           {updating === 'all' ? <ButtonLoader label="Marking all as read" /> : <><CheckCheck size={17} />{unread.length ? 'Mark all as read' : 'All notifications read'}</>}

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router'
-import { ArrowLeft, ArrowRight, CheckCircle2, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import Logo from '../components/Logo'
 import Loader, { ButtonLoader } from '../components/Loader'
 
@@ -35,8 +36,13 @@ export default function AuthPage() {
   const [processing, setProcessing] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
   const { user, loading, signIn, signUp, sendMagicLink } = useAuth()
+  const { showToast } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
+
+  useEffect(() => {
+    if (message.text) showToast(message.text, message.type || 'info')
+  }, [message, showToast])
 
   if (!loading && user) return <Navigate to="/dashboard" replace />
 
@@ -124,7 +130,6 @@ export default function AuthPage() {
             <label>Email address<div className="auth-input"><Mail size={18} /><input type="email" autoComplete="email" placeholder="you@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div></label>
             {!magic && <label>Password<div className="auth-input"><LockKeyhole size={18} /><input type={showPassword ? 'text' : 'password'} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} placeholder="At least 8 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /><button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>}
 
-            {message.text && <div className={`auth-message auth-message--${message.type}`} role={message.type === 'error' ? 'alert' : 'status'}>{message.type === 'success' && <CheckCircle2 size={18} />}<span>{message.text}</span></div>}
             <button className="auth-submit" type="submit" disabled={processing}>{processing ? <ButtonLoader label={magic ? 'Sending link' : 'Securing session'} /> : <>{submitLabel}<ArrowRight size={18} /></>}</button>
           </form>
 

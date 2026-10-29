@@ -23,6 +23,8 @@ export default function App() {
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/dashboard" element={<ProtectedRoute memberOnly><DashboardPage /></ProtectedRoute>} />
+        <Route path="/dashboard/processing" element={<ProtectedRoute memberOnly><DashboardPage initialView="processing" /></ProtectedRoute>} />
+        <Route path="/dashboard/pending" element={<ProtectedRoute memberOnly><DashboardPage initialView="pending" /></ProtectedRoute>} />
         <Route path="/dashboard/deposit" element={<ProtectedRoute memberOnly><DepositPage /></ProtectedRoute>} />
         <Route path="/dashboard/withdraw" element={<ProtectedRoute memberOnly><WithdrawalPage /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>} />
